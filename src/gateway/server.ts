@@ -1,8 +1,14 @@
 import { Hono } from "hono";
+import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 import { createServer, type Server } from "http";
 import { SessionManager } from "../infra/index.js";
-import { FrameSchema, createResponse, createEvent } from "./protocol/index.js";
+import {
+  FrameSchema,
+  createResponse,
+  createEvent,
+  type RequestFrame,
+} from "./protocol/index.js";
 
 export class GatewayServer {
   private app: Hono;
@@ -75,9 +81,9 @@ export class GatewayServer {
   }
 
   private async handleRequest(
-    ws: import("ws").WebSocket,
+    ws: WebSocket,
     _sessionId: string,
-    frame: import("./protocol/index.js").RequestFrame,
+    frame: RequestFrame,
   ): Promise<void> {
     switch (frame.method) {
       case "ping":

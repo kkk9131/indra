@@ -1,4 +1,5 @@
-import { ConnectionStatusElement } from "./ui/connection-status.js";
-import { ChatUIElement } from "./ui/chat-ui.js";
-
-export { ConnectionStatusElement, ChatUIElement };
+export {
+  ConnectionStatusElement,
+  ConnectionStatusElement as ConnectionStatus,
+} from "./ui/connection-status.js";
+export { ChatUIElement, ChatUIElement as ChatUI } from "./ui/chat-ui.js";

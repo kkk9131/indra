@@ -1,4 +1,4 @@
-import { LitElement, css, html, nothing } from "lit";
+import { LitElement, css, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
 interface Message {
@@ -108,6 +108,9 @@ export class ChatUIElement extends LitElement {
 
   @state()
   isSending = false;
+
+  @state()
+  private sessionId?: string;
 
   private ws?: WebSocket;
   private requestId = 0;
