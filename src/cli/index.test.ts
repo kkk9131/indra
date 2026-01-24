@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { Command } from "commander";
 import { createCli } from "./index.js";
 import { registerChatCommand } from "../commands/chat.js";

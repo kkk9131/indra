@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { SessionManager, SessionSchema } from "./session.js";
 
 // Skip SQLite tests in Vitest (native module binding issues)
