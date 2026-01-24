@@ -54,11 +54,13 @@
 | プロバイダー | モデル例         | 接続方式         | 備考                         |
 | ------------ | ---------------- | ---------------- | ---------------------------- |
 | Anthropic    | Claude 4 / Opus  | Claude Agent SDK | ツール使用、エージェント機能 |
-| OpenAI       | GPT-4o, o1       | API Key          | REST API                     |
+| OpenAI       | Codex / GPT-4o   | Codex SDK        | ツール使用、エージェント機能 |
 | Google       | Gemini Pro/Ultra | API Key / OAuth  | REST API                     |
 | Ollama       | Llama, Mistral等 | ローカル HTTP    | 認証不要                     |
 
-### 3.1 Claude Agent SDK の利点
+### 3.1 エージェントSDKの利点
+
+**Claude Agent SDK / Codex SDK 共通:**
 
 - **ツール使用**: ファイル操作、コマンド実行、Web検索等
 - **マルチターン**: 複雑なタスクの自律的な実行
@@ -68,4 +70,4 @@
 ### 3.2 プロバイダー切替
 
 設定で切替可能、デフォルトプロバイダーの指定も可能。
-Claude Agent SDKはエージェント機能が必要な場合に推奨。
+エージェントSDK（Claude / Codex）はエージェント機能が必要な場合に推奨。

@@ -54,27 +54,34 @@
 | ------------ | ------------------------- | ------------------------- |
 | Anthropic    | @anthropic-ai/claude-code | Claude Agent SDK（推奨）  |
 | Anthropic    | @anthropic-ai/sdk         | 直接API（フォールバック） |
-| OpenAI       | openai                    | REST API                  |
+| OpenAI       | @openai/codex             | Codex SDK（推奨）         |
+| OpenAI       | openai                    | 直接API（フォールバック） |
 | Google       | @google/generative-ai     | REST API                  |
 | Ollama       | ollama (HTTP API)         | ローカル実行              |
 
-### Claude Agent SDK 使用方法
+### エージェントSDK 使用方法
 
 ```typescript
+// Claude Agent SDK
 import Anthropic from "@anthropic-ai/sdk";
-
-const client = new Anthropic();
-
-// Claude Agent SDKでサブプロセス起動
-const response = await client.messages.create({
+const claude = new Anthropic();
+const response = await claude.messages.create({
   model: "claude-sonnet-4-20250514",
   max_tokens: 8096,
   messages: [{ role: "user", content: prompt }],
-  tools: [...], // ツール定義
+  tools: [...],
+});
+
+// Codex SDK
+import { CodexSDK } from "@openai/codex";
+const codex = new CodexSDK();
+const response = await codex.run({
+  prompt: prompt,
+  tools: [...],
 });
 ```
 
-Agent SDKはサブプロセスとして動作し、ツール使用やマルチターン処理を自律的に実行。
+エージェントSDKはサブプロセスとして動作し、ツール使用やマルチターン処理を自律的に実行。
 
 ## 8. 開発ツール
 
