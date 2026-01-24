@@ -1,0 +1,11 @@
+[lints]
+# TypeScript rules
+correctness.noUnusedVariables = "warn"
+correctness.noUnusedImports = "warn"
+
+[oxlint]
+# Target environment
+target = "es2022"
+
+# Config
+allow-absolute-paths = true

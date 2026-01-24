@@ -1,0 +1,48 @@
+{
+  "name": "indra",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local multi-agent AI assistant (CLI + Web UI hybrid)",
+  "main": "dist/index.js",
+  "bin": {
+    "indra": "dist/cli/entry.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "lint": "oxlint",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "cli": "node dist/cli/entry.js",
+    "gateway": "node dist/gateway/server.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "oxlint": "^1.41.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.6",
+    "vitest": "^3.0.5"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.8.2",
+    "better-sqlite3": "^11.8.1",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "hono": "^4.6.15",
+    "proper-lockfile": "^4.1.2",
+    "ws": "^8.18.0",
+    "zod": "^3.24.1"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
+}
