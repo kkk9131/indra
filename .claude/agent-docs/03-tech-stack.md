@@ -50,12 +50,31 @@
 
 ## 7. LLM SDK
 
-| プロバイダー | SDK                   |
-| ------------ | --------------------- |
-| Anthropic    | @anthropic-ai/sdk     |
-| OpenAI       | openai                |
-| Google       | @google/generative-ai |
-| Ollama       | ollama (HTTP API)     |
+| プロバイダー | SDK                       | 備考                      |
+| ------------ | ------------------------- | ------------------------- |
+| Anthropic    | @anthropic-ai/claude-code | Claude Agent SDK（推奨）  |
+| Anthropic    | @anthropic-ai/sdk         | 直接API（フォールバック） |
+| OpenAI       | openai                    | REST API                  |
+| Google       | @google/generative-ai     | REST API                  |
+| Ollama       | ollama (HTTP API)         | ローカル実行              |
+
+### Claude Agent SDK 使用方法
+
+```typescript
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic();
+
+// Claude Agent SDKでサブプロセス起動
+const response = await client.messages.create({
+  model: "claude-sonnet-4-20250514",
+  max_tokens: 8096,
+  messages: [{ role: "user", content: prompt }],
+  tools: [...], // ツール定義
+});
+```
+
+Agent SDKはサブプロセスとして動作し、ツール使用やマルチターン処理を自律的に実行。
 
 ## 8. 開発ツール
 
