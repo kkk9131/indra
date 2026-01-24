@@ -56,6 +56,7 @@
 | Anthropic    | @anthropic-ai/sdk         | 直接API（フォールバック） |
 | OpenAI       | @openai/codex             | Codex SDK（推奨）         |
 | OpenAI       | openai                    | 直接API（フォールバック） |
+| GitHub       | @github/copilot-sdk       | Copilot SDK（推奨）       |
 | Google       | @google/generative-ai     | REST API                  |
 | Ollama       | ollama (HTTP API)         | ローカル実行              |
 
@@ -79,9 +80,19 @@ const response = await codex.run({
   prompt: prompt,
   tools: [...],
 });
+
+// Copilot SDK
+import { CopilotSDK } from "@github/copilot-sdk";
+const copilot = new CopilotSDK();
+const response = await copilot.run({
+  prompt: prompt,
+  tools: [...],
+});
 ```
 
 エージェントSDKはサブプロセスとして動作し、ツール使用やマルチターン処理を自律的に実行。
+
+**注意**: Copilot SDKはCopilot CLI別途インストール + GitHub Copilot購読が必要。
 
 ## 8. 開発ツール
 
