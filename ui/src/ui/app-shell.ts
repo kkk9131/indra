@@ -37,6 +37,42 @@ export class AppShellElement extends LitElement {
       background: var(--bg-primary, #e8f5e9);
       overflow-y: auto;
     }
+
+    .chat-fab {
+      position: fixed;
+      bottom: 80px;
+      right: 24px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--primary, #2e7d32);
+      color: white;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transition:
+        transform 0.2s,
+        box-shadow 0.2s;
+      z-index: 999;
+    }
+
+    .chat-fab:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    }
+
+    .chat-fab svg {
+      width: 24px;
+      height: 24px;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
   `;
 
   @property({ type: Boolean })
@@ -47,6 +83,9 @@ export class AppShellElement extends LitElement {
 
   @state()
   private currentPage = "home";
+
+  @state()
+  private chatOpen = false;
 
   @property({ type: Array })
   pendingItems: PendingItem[] = [
@@ -113,6 +152,10 @@ export class AppShellElement extends LitElement {
     }
   }
 
+  private toggleChat(): void {
+    this.chatOpen = !this.chatOpen;
+  }
+
   render() {
     return html`
       <div class="body">
@@ -127,6 +170,19 @@ export class AppShellElement extends LitElement {
         .llm="${this.llm}"
         .pendingCount="${this.pendingItems.length}"
       ></indra-status-bar>
+
+      <button class="chat-fab" @click="${this.toggleChat}" title="Open Chat">
+        <svg viewBox="0 0 24 24">
+          <path
+            d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+          />
+        </svg>
+      </button>
+
+      <indra-chat-ui
+        ?open="${this.chatOpen}"
+        @close="${() => (this.chatOpen = false)}"
+      ></indra-chat-ui>
     `;
   }
 }

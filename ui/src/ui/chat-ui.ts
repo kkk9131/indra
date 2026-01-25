@@ -6,6 +6,7 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: number;
+  isStreaming?: boolean;
 }
 
 @customElement("indra-chat-ui")
@@ -31,27 +32,14 @@ export class ChatUIElement extends LitElement {
       transform: translateX(0);
     }
 
-    .header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 20px;
-      background: var(--primary, #2e7d32);
-      color: white;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
-    .header h2 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 600;
-    }
-
     .close-btn {
-      background: none;
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: var(--bg-tertiary, #f5f5f5);
       border: none;
-      color: white;
-      font-size: 24px;
+      color: var(--text-secondary, #636e72);
+      font-size: 18px;
       cursor: pointer;
       padding: 0;
       width: 32px;
@@ -59,17 +47,19 @@ export class ChatUIElement extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 4px;
+      border-radius: 50%;
+      z-index: 10;
     }
 
     .close-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
+      background: var(--border, #e0e0e0);
+      color: var(--text-primary, #2d3436);
     }
 
     .messages {
       flex: 1;
       overflow-y: auto;
-      padding: 16px;
+      padding: 48px 16px 16px;
       display: flex;
       flex-direction: column;
       gap: 12px;
@@ -102,11 +92,29 @@ export class ChatUIElement extends LitElement {
       border-radius: 12px;
       color: var(--text-primary, #2d3436);
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+      white-space: pre-wrap;
+      word-break: break-word;
     }
 
     .message.user .message-content {
       background: var(--primary, #2e7d32);
       color: white;
+    }
+
+    .message.streaming .message-content::after {
+      content: "▌";
+      animation: blink 1s infinite;
+    }
+
+    @keyframes blink {
+      0%,
+      50% {
+        opacity: 1;
+      }
+      51%,
+      100% {
+        opacity: 0;
+      }
     }
 
     .avatar {
@@ -176,6 +184,22 @@ export class ChatUIElement extends LitElement {
       background: var(--border, #e0e0e0);
       cursor: not-allowed;
     }
+
+    .status {
+      padding: 8px 16px;
+      font-size: 12px;
+      color: var(--text-secondary, #636e72);
+      background: rgba(0, 0, 0, 0.03);
+      border-top: 1px solid var(--border, #e0e0e0);
+    }
+
+    .status.connected {
+      color: var(--primary, #2e7d32);
+    }
+
+    .status.disconnected {
+      color: #d32f2f;
+    }
   `;
 
   @property({ type: Boolean })
@@ -200,7 +224,11 @@ export class ChatUIElement extends LitElement {
   private sessionId?: string;
 
   private ws?: WebSocket;
-  private requestId = 0;
+  private currentStreamingId?: string;
+  private pendingRequests = new Map<
+    string,
+    { resolve: () => void; reject: (err: Error) => void }
+  >();
 
   connectedCallback() {
     super.connectedCallback();
@@ -235,30 +263,82 @@ export class ChatUIElement extends LitElement {
 
   private processFrame(frame: {
     type: string;
+    id?: string;
     ok?: boolean;
     event?: string;
     payload?: { sessionId?: string; text?: string };
+    error?: { code: string; message: string };
   }): void {
+    // Handle initial session response
     if (frame.type === "res" && frame.ok && frame.payload?.sessionId) {
       this.sessionId = frame.payload.sessionId;
       return;
     }
 
-    if (frame.type === "event" && frame.event === "chat.message") {
-      this.messages = [
-        ...this.messages,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: String(frame.payload?.text ?? ""),
-          timestamp: Date.now(),
-        },
-      ];
+    // Handle request response
+    if (frame.type === "res" && frame.id) {
+      const pending = this.pendingRequests.get(frame.id);
+      if (pending) {
+        this.pendingRequests.delete(frame.id);
+        if (frame.ok) {
+          pending.resolve();
+        } else {
+          pending.reject(new Error(frame.error?.message ?? "Request failed"));
+        }
+      }
+      return;
     }
+
+    // Handle streaming events
+    if (frame.type === "event") {
+      if (frame.event === "chat.chunk" && this.currentStreamingId) {
+        this.appendChunk(frame.payload?.text ?? "");
+      } else if (frame.event === "chat.done" && this.currentStreamingId) {
+        this.finishStreaming();
+      }
+    }
+  }
+
+  private appendChunk(text: string): void {
+    if (!this.currentStreamingId) return;
+
+    this.messages = this.messages.map((msg) =>
+      msg.id === this.currentStreamingId
+        ? { ...msg, content: msg.content + text }
+        : msg,
+    );
+
+    // Auto-scroll to bottom
+    this.updateComplete.then(() => {
+      const messagesEl = this.shadowRoot?.querySelector(".messages");
+      if (messagesEl) {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+    });
+  }
+
+  private finishStreaming(): void {
+    if (!this.currentStreamingId) return;
+
+    this.messages = this.messages.map((msg) =>
+      msg.id === this.currentStreamingId ? { ...msg, isStreaming: false } : msg,
+    );
+    this.currentStreamingId = undefined;
+    this.isSending = false;
   }
 
   private handleClose(): void {
     this.isConnected = false;
+    // Reject all pending requests
+    for (const pending of this.pendingRequests.values()) {
+      pending.reject(new Error("Connection closed"));
+    }
+    this.pendingRequests.clear();
+
+    // Finish any streaming message
+    if (this.currentStreamingId) {
+      this.finishStreaming();
+    }
   }
 
   private disconnect(): void {
@@ -283,6 +363,12 @@ export class ChatUIElement extends LitElement {
     }
   }
 
+  private getHistory(): Array<{ role: string; content: string }> {
+    return this.messages
+      .filter((m) => !m.isStreaming)
+      .map((m) => ({ role: m.role, content: m.content }));
+  }
+
   private sendMessage(): void {
     if (this.isSendDisabled) {
       return;
@@ -295,37 +381,68 @@ export class ChatUIElement extends LitElement {
       timestamp: Date.now(),
     };
 
-    this.messages = [...this.messages, userMessage];
+    // Create streaming assistant message
+    const assistantMessage: Message = {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: "",
+      timestamp: Date.now(),
+      isStreaming: true,
+    };
+
+    this.messages = [...this.messages, userMessage, assistantMessage];
+    this.currentStreamingId = assistantMessage.id;
     this.isSending = true;
 
-    const requestId = `req_${this.requestId++}`;
+    const requestId = crypto.randomUUID();
+    const history = this.getHistory().slice(0, -1); // Exclude the empty streaming message
+
+    // Create promise for response tracking
+    new Promise<void>((resolve, reject) => {
+      this.pendingRequests.set(requestId, { resolve, reject });
+    }).catch((err) => {
+      console.error("Chat error:", err);
+      this.finishStreaming();
+    });
 
     this.ws?.send(
       JSON.stringify({
         type: "req",
         id: requestId,
         method: "chat.send",
-        params: { text: this.inputText },
+        params: { message: this.inputText, history },
       }),
     );
 
     this.inputText = "";
-    this.isSending = false;
+
+    // Auto-scroll
+    this.updateComplete.then(() => {
+      const messagesEl = this.shadowRoot?.querySelector(".messages");
+      if (messagesEl) {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+    });
+  }
+
+  private handleClose(): void {
+    this.dispatchEvent(
+      new CustomEvent("close", { bubbles: true, composed: true }),
+    );
   }
 
   render() {
     return html`
-      <div class="header">
-        <h2>AI Chat</h2>
-        <button class="close-btn" @click="${() => (this.open = false)}">
-          ×
-        </button>
-      </div>
+      <button class="close-btn" @click="${this.handleClose}" title="Close">
+        ×
+      </button>
 
       <div class="messages">
         ${this.messages.map(
           (msg) => html`
-            <div class="message ${msg.role}">
+            <div
+              class="message ${msg.role} ${msg.isStreaming ? "streaming" : ""}"
+            >
               <div class="avatar">${msg.role === "user" ? "👤" : "🤖"}</div>
               <div class="message-content">${msg.content}</div>
             </div>
@@ -339,10 +456,15 @@ export class ChatUIElement extends LitElement {
           @input="${this.handleInput}"
           @keydown="${this.handleKeydown}"
           placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
+          ?disabled="${this.isSending}"
         ></textarea>
         <button ?disabled="${this.isSendDisabled}" @click="${this.sendMessage}">
-          Send
+          ${this.isSending ? "..." : "Send"}
         </button>
+      </div>
+
+      <div class="status ${this.isConnected ? "connected" : "disconnected"}">
+        ${this.isConnected ? "● Connected" : "○ Disconnected"}
       </div>
     `;
   }

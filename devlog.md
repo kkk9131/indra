@@ -173,3 +173,44 @@
 - 実際のLLM API接続テスト
 - チャットUIでストリーミング表示確認
 - 残り画面（Approval, Schedule, History, Account）実装
+
+---
+
+## 2026-01-26 04:44 [IMPL] Phase 2 CLI/Web UI ストリーミング対応を完了
+
+### 実装内容
+
+- **並列実装スキル（/parallel-impl）使用:**
+  - GLM: `src/cli/ws-client.ts` - WebSocketクライアント（接続管理、chat.send、再接続）
+  - Codex: `src/cli/stream-renderer.ts` - ストリーミング表示（スピナー、リアルタイム出力）
+  - Claude: `src/commands/chat.ts` - CLI Chat UI統合（履歴管理、/clear、/history）
+- **Web UI ストリーミング対応:**
+  - `ui/src/ui/chat-ui.ts` - chat.chunk/chat.done イベント処理、カーソルブリンク
+  - `ui/src/ui/app-shell.ts` - フローティングチャットボタン（FAB）追加
+- **チャットパネルUI改善:**
+  - ヘッダー削除（シンプル化）
+  - ×ボタンでcloseイベント発火（親への通知）
+
+### 成功
+
+- P2-2-2（CLI ストリーミング）完了
+- P2-2-3（Web UI ストリーミング）完了
+- Phase 2 完了率: 100%（P2-1-4 Copilot以外）
+- GLM + Codex + Claude の3エージェント並列実装が機能
+- テスト12件パス
+
+### 失敗/課題
+
+- ×ボタンが最初動作しなかった: `this.open = false` ではなくイベント発火が必要
+- Web UIのストリーミング対応を忘れていた → ユーザー指摘で追加実装
+
+### 学び
+
+- Litコンポーネントで親に状態変更を通知するには `dispatchEvent(new CustomEvent())` を使う
+- `/parallel-impl` スキルで複数LLMにタスク分散可能
+- AsyncIterableとキューを組み合わせてストリーミング受信を実装
+- `?open="${this.chatOpen}"` でboolean属性をLitにバインド
+
+### 関連タスク
+
+P2-2-2, P2-2-3
