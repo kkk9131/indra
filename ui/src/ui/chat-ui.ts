@@ -14,8 +14,56 @@ export class ChatUIElement extends LitElement {
     :host {
       display: flex;
       flex-direction: column;
+      position: fixed;
+      right: 0;
+      top: 0;
       height: 100%;
-      font-family: system-ui, sans-serif;
+      width: 400px;
+      font-family: "Geist Mono", "Inter", system-ui, monospace;
+      background: var(--bg-primary, #e8f5e9);
+      border-left: 1px solid var(--border, #e0e0e0);
+      transform: translateX(100%);
+      transition: transform 0.3s ease;
+      z-index: 1000;
+    }
+
+    :host([open]) {
+      transform: translateX(0);
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      background: var(--primary, #2e7d32);
+      color: white;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .header h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+    }
+
+    .close-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
     }
 
     .messages {
@@ -25,26 +73,61 @@ export class ChatUIElement extends LitElement {
       display: flex;
       flex-direction: column;
       gap: 12px;
-      background: #f9fafb;
+      background: var(--bg-primary, #e8f5e9);
     }
 
     .message {
-      max-width: 70%;
+      max-width: 80%;
       padding: 12px 16px;
       border-radius: 12px;
       line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
 
     .message.user {
       align-self: flex-end;
-      background: #3b82f6;
-      color: white;
+      align-items: flex-end;
     }
 
     .message.assistant {
       align-self: flex-start;
-      background: #e5e7eb;
-      color: #1f2937;
+      align-items: flex-start;
+    }
+
+    .message-content {
+      background: white;
+      padding: 12px 16px;
+      border-radius: 12px;
+      color: var(--text-primary, #2d3436);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    .message.user .message-content {
+      background: var(--primary, #2e7d32);
+      color: white;
+    }
+
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .message.user .avatar {
+      background: var(--primary, #2e7d32);
+      color: white;
+    }
+
+    .message.assistant .avatar {
+      background: var(--text-secondary, #636e72);
+      color: white;
     }
 
     .input-area {
@@ -52,7 +135,7 @@ export class ChatUIElement extends LitElement {
       gap: 8px;
       padding: 16px;
       background: white;
-      border-top: 1px solid #e5e7eb;
+      border-top: 1px solid var(--border, #e0e0e0);
     }
 
     textarea {
@@ -60,39 +143,43 @@ export class ChatUIElement extends LitElement {
       min-height: 40px;
       max-height: 120px;
       padding: 10px;
-      border: 1px solid #d1d5db;
+      border: 1px solid var(--border, #e0e0e0);
       border-radius: 8px;
       resize: vertical;
-      font-family: inherit;
+      font-family: "Geist Mono", "Inter", system-ui, monospace;
       font-size: 14px;
     }
 
     textarea:focus {
       outline: none;
-      border-color: #3b82f6;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      border-color: var(--primary, #2e7d32);
+      box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.1);
     }
 
     button {
       padding: 10px 20px;
-      background: #3b82f6;
+      background: var(--primary, #2e7d32);
       color: white;
       border: none;
       border-radius: 8px;
       cursor: pointer;
       font-size: 14px;
       font-weight: 500;
+      font-family: "Geist Mono", "Inter", system-ui, monospace;
     }
 
     button:hover:not(:disabled) {
-      background: #2563eb;
+      background: #1b5e20;
     }
 
     button:disabled {
-      background: #9ca3af;
+      background: var(--border, #e0e0e0);
       cursor: not-allowed;
     }
   `;
+
+  @property({ type: Boolean })
+  open = false;
 
   @property()
   wsUrl = "ws://localhost:3001";
@@ -127,40 +214,51 @@ export class ChatUIElement extends LitElement {
 
   private connect(): void {
     this.ws = new WebSocket(this.wsUrl);
+    this.ws.onopen = this.handleOpen.bind(this);
+    this.ws.onmessage = this.handleMessage.bind(this);
+    this.ws.onclose = this.handleClose.bind(this);
+    this.ws.onerror = this.handleClose.bind(this);
+  }
 
-    this.ws.onopen = () => {
-      this.isConnected = true;
-    };
+  private handleOpen(): void {
+    this.isConnected = true;
+  }
 
-    this.ws.onmessage = (event) => {
-      try {
-        const frame = JSON.parse(event.data);
+  private handleMessage(event: MessageEvent): void {
+    try {
+      const frame = JSON.parse(event.data);
+      this.processFrame(frame);
+    } catch {
+      // Ignore malformed messages
+    }
+  }
 
-        if (frame.type === "res" && frame.ok && frame.payload?.sessionId) {
-          this.sessionId = frame.payload.sessionId;
-        } else if (frame.type === "event" && frame.event === "chat.message") {
-          this.messages = [
-            ...this.messages,
-            {
-              id: crypto.randomUUID(),
-              role: "assistant",
-              content: String(frame.payload?.text ?? ""),
-              timestamp: Date.now(),
-            },
-          ];
-        }
-      } catch {
-        // Ignore malformed messages
-      }
-    };
+  private processFrame(frame: {
+    type: string;
+    ok?: boolean;
+    event?: string;
+    payload?: { sessionId?: string; text?: string };
+  }): void {
+    if (frame.type === "res" && frame.ok && frame.payload?.sessionId) {
+      this.sessionId = frame.payload.sessionId;
+      return;
+    }
 
-    this.ws.onclose = () => {
-      this.isConnected = false;
-    };
+    if (frame.type === "event" && frame.event === "chat.message") {
+      this.messages = [
+        ...this.messages,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: String(frame.payload?.text ?? ""),
+          timestamp: Date.now(),
+        },
+      ];
+    }
+  }
 
-    this.ws.onerror = () => {
-      this.isConnected = false;
-    };
+  private handleClose(): void {
+    this.isConnected = false;
   }
 
   private disconnect(): void {
@@ -169,8 +267,24 @@ export class ChatUIElement extends LitElement {
     this.isConnected = false;
   }
 
+  private get isSendDisabled(): boolean {
+    return !this.inputText.trim() || !this.isConnected || this.isSending;
+  }
+
+  private handleInput(e: Event): void {
+    const target = e.target as HTMLTextAreaElement;
+    this.inputText = target.value;
+  }
+
+  private handleKeydown(e: KeyboardEvent): void {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      this.sendMessage();
+    }
+  }
+
   private sendMessage(): void {
-    if (!this.inputText.trim() || !this.isConnected || this.isSending) {
+    if (this.isSendDisabled) {
       return;
     }
 
@@ -201,10 +315,20 @@ export class ChatUIElement extends LitElement {
 
   render() {
     return html`
+      <div class="header">
+        <h2>AI Chat</h2>
+        <button class="close-btn" @click="${() => (this.open = false)}">
+          ×
+        </button>
+      </div>
+
       <div class="messages">
         ${this.messages.map(
           (msg) => html`
-            <div class="message ${msg.role}">${msg.content}</div>
+            <div class="message ${msg.role}">
+              <div class="avatar">${msg.role === "user" ? "👤" : "🤖"}</div>
+              <div class="message-content">${msg.content}</div>
+            </div>
           `,
         )}
       </div>
@@ -212,24 +336,11 @@ export class ChatUIElement extends LitElement {
       <div class="input-area">
         <textarea
           .value="${this.inputText}"
-          @input="${(e: Event) => {
-            const target = e.target as HTMLTextAreaElement;
-            this.inputText = target.value;
-          }}"
-          @keydown="${(e: KeyboardEvent) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              this.sendMessage();
-            }
-          }}"
+          @input="${this.handleInput}"
+          @keydown="${this.handleKeydown}"
           placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
         ></textarea>
-        <button
-          ?disabled="${!this.inputText.trim() ||
-          !this.isConnected ||
-          this.isSending}"
-          @click="${this.sendMessage}"
-        >
+        <button ?disabled="${this.isSendDisabled}" @click="${this.sendMessage}">
           Send
         </button>
       </div>

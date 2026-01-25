@@ -7,9 +7,15 @@ settings:
 importers:
   .:
     dependencies:
+      "@anthropic-ai/sdk":
+        specifier: ^0.71.2
+        version: 0.71.2(zod@3.25.76)
       "@clack/prompts":
         specifier: ^0.8.2
         version: 0.8.2
+      "@google/generative-ai":
+        specifier: ^0.24.1
+        version: 0.24.1
       better-sqlite3:
         specifier: ^11.8.1
         version: 11.10.0
@@ -22,6 +28,9 @@ importers:
       hono:
         specifier: ^4.6.15
         version: 4.11.5
+      openai:
+        specifier: ^6.16.0
+        version: 6.16.0(ws@8.19.0)(zod@3.25.76)
       proper-lockfile:
         specifier: ^4.1.2
         version: 4.1.2
@@ -71,6 +80,25 @@ importers:
         version: 6.4.1(@types/node@22.19.7)
 
 packages:
+  "@anthropic-ai/sdk@0.71.2":
+    resolution:
+      {
+        integrity: sha512-TGNDEUuEstk/DKu0/TflXAEt+p+p/WhTlFzEnoosvbaDU2LTjm42igSdlL0VijrKpWejtOKxX0b8A7uc+XiSAQ==,
+      }
+    hasBin: true
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+
+  "@babel/runtime@7.28.6":
+    resolution:
+      {
+        integrity: sha512-05WQkdpL9COIMz4LjTxGpPNCdlpyimKppYNoJ5Di5EUObifl8t4tuLuUBBZEpoLYOmfvIWrsp9fCl0HoPRVTdA==,
+      }
+    engines: { node: ">=6.9.0" }
+
   "@clack/core@0.3.5":
     resolution:
       {
@@ -316,6 +344,13 @@ packages:
     engines: { node: ">=18" }
     cpu: [x64]
     os: [win32]
+
+  "@google/generative-ai@0.24.1":
+    resolution:
+      {
+        integrity: sha512-MqO+MLfM6kjxcKoy0p1wRzG3b4ZZXtPI+z2IE26UogS2Cm/XHO+7gGRBh6gcJsOiIVoH93UwKvW4HdgiOZCy9Q==,
+      }
+    engines: { node: ">=18.0.0" }
 
   "@jridgewell/sourcemap-codec@1.5.5":
     resolution:
@@ -924,6 +959,13 @@ packages:
         integrity: sha512-mxa9E9ITFOt0ban3j6L5MpjwegGz6lBQmM1IJkWeBZGcMxto50+eWdjC/52xDbS2vy0k7vIMK0Fe2wfL9OQSpQ==,
       }
 
+  json-schema-to-ts@3.1.1:
+    resolution:
+      {
+        integrity: sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g==,
+      }
+    engines: { node: ">=16" }
+
   lit-element@4.2.2:
     resolution:
       {
@@ -1005,6 +1047,21 @@ packages:
       {
         integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==,
       }
+
+  openai@6.16.0:
+    resolution:
+      {
+        integrity: sha512-fZ1uBqjFUjXzbGc35fFtYKEOxd20kd9fDpFeqWtsOZWiubY8CZ1NAlXHW3iathaFvqmNtCWMIsosCuyeI7Joxg==,
+      }
+    hasBin: true
+    peerDependencies:
+      ws: ^8.18.0
+      zod: ^3.25 || ^4.0
+    peerDependenciesMeta:
+      ws:
+        optional: true
+      zod:
+        optional: true
 
   oxlint@1.41.0:
     resolution:
@@ -1236,6 +1293,12 @@ packages:
       }
     engines: { node: ">=14.0.0" }
 
+  ts-algebra@2.0.0:
+    resolution:
+      {
+        integrity: sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw==,
+      }
+
   tunnel-agent@0.6.0:
     resolution:
       {
@@ -1380,6 +1443,14 @@ packages:
       }
 
 snapshots:
+  "@anthropic-ai/sdk@0.71.2(zod@3.25.76)":
+    dependencies:
+      json-schema-to-ts: 3.1.1
+    optionalDependencies:
+      zod: 3.25.76
+
+  "@babel/runtime@7.28.6": {}
+
   "@clack/core@0.3.5":
     dependencies:
       picocolors: 1.1.1
@@ -1468,6 +1539,8 @@ snapshots:
 
   "@esbuild/win32-x64@0.25.12":
     optional: true
+
+  "@google/generative-ai@0.24.1": {}
 
   "@jridgewell/sourcemap-codec@1.5.5": {}
 
@@ -1765,6 +1838,11 @@ snapshots:
 
   js-tokens@9.0.1: {}
 
+  json-schema-to-ts@3.1.1:
+    dependencies:
+      "@babel/runtime": 7.28.6
+      ts-algebra: 2.0.0
+
   lit-element@4.2.2:
     dependencies:
       "@lit-labs/ssr-dom-shim": 1.5.1
@@ -1806,6 +1884,11 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
+
+  openai@6.16.0(ws@8.19.0)(zod@3.25.76):
+    optionalDependencies:
+      ws: 8.19.0
+      zod: 3.25.76
 
   oxlint@1.41.0:
     optionalDependencies:
@@ -1967,6 +2050,8 @@ snapshots:
   tinyrainbow@2.0.0: {}
 
   tinyspy@4.0.4: {}
+
+  ts-algebra@2.0.0: {}
 
   tunnel-agent@0.6.0:
     dependencies:

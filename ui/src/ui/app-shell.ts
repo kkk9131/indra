@@ -5,6 +5,8 @@ import type { ScheduleItem } from "./schedule-list.js";
 import "./sidebar-nav.js";
 import "./status-bar.js";
 import "./home-page.js";
+import "./settings-page.js";
+import "./chat-ui.js";
 
 @customElement("indra-app-shell")
 export class AppShellElement extends LitElement {
@@ -14,7 +16,13 @@ export class AppShellElement extends LitElement {
       flex-direction: column;
       width: 100%;
       height: 100vh;
-      font-family: var(--font-family, "Inter", system-ui, sans-serif);
+      font-family: var(
+        --font-family,
+        "Geist Mono",
+        "Inter",
+        system-ui,
+        monospace
+      );
     }
 
     .body {
@@ -80,14 +88,14 @@ export class AppShellElement extends LitElement {
     },
   ];
 
-  private handleNavigate(e: CustomEvent) {
+  private handleNavigate(e: CustomEvent): void {
     const { id } = e.detail;
     if (id) {
       this.currentPage = id;
     }
   }
 
-  private renderPage() {
+  private renderPage(): ReturnType<typeof html> {
     switch (this.currentPage) {
       case "home":
         return html`
@@ -96,8 +104,12 @@ export class AppShellElement extends LitElement {
             .scheduleItems="${this.scheduleItems}"
           ></indra-home-page>
         `;
+      case "settings":
+        return html`<indra-settings-page></indra-settings-page>`;
       default:
-        return html`<div>Coming soon...</div>`;
+        return html`<div style="padding: 40px; font-size: 18px;">
+          Coming soon...
+        </div>`;
     }
   }
 

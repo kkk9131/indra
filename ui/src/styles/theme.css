@@ -18,5 +18,6 @@
   --danger: #e74c3c;
 
   /* Typography */
-  --font-family: "Inter", system-ui, sans-serif;
+  --font-family:
+    "Geist Mono", "SF Mono", "Monaco", "Inconsolata", "Fira Mono", monospace;
 }
