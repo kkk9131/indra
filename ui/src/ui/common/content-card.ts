@@ -82,6 +82,16 @@ export class ContentCardElement extends LitElement {
       font-weight: 500;
     }
 
+    .status svg {
+      width: 14px;
+      height: 14px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
     .actions {
       display: flex;
       gap: 8px;
@@ -157,42 +167,39 @@ export class ContentCardElement extends LitElement {
   }
 
   private renderActions() {
-    if (!this.showActions) return null;
-
-    if (this.content.status === "pending") {
-      return html`
-        <div class="actions">
-          <button
-            class="action-btn"
-            @click="${() => this.emitAction("preview")}"
-          >
-            Preview
-          </button>
-          <button class="action-btn" @click="${() => this.emitAction("edit")}">
-            Edit
-          </button>
-          <button
-            class="action-btn primary"
-            @click="${() => this.emitAction("approve")}"
-          >
-            Approve
-          </button>
-          <button
-            class="action-btn danger"
-            @click="${() => this.emitAction("reject")}"
-          >
-            Reject
-          </button>
-        </div>
-      `;
+    if (!this.showActions) {
+      return null;
     }
 
+    const isPending = this.content.status === "pending";
+    const pendingActions = html`
+      <button class="action-btn" @click="${() => this.emitAction("preview")}">
+        Preview
+      </button>
+      <button class="action-btn" @click="${() => this.emitAction("edit")}">
+        Edit
+      </button>
+      <button
+        class="action-btn primary"
+        @click="${() => this.emitAction("approve")}"
+      >
+        Approve
+      </button>
+      <button
+        class="action-btn danger"
+        @click="${() => this.emitAction("reject")}"
+      >
+        Reject
+      </button>
+    `;
+    const viewAction = html`
+      <button class="action-btn" @click="${() => this.emitAction("view")}">
+        View
+      </button>
+    `;
+
     return html`
-      <div class="actions">
-        <button class="action-btn" @click="${() => this.emitAction("view")}">
-          View
-        </button>
-      </div>
+      <div class="actions">${isPending ? pendingActions : viewAction}</div>
     `;
   }
 
@@ -218,7 +225,8 @@ export class ContentCardElement extends LitElement {
 
         <div class="footer">
           <span class="status" style="${statusStyle}">
-            ${statusConfig.icon} ${statusConfig.label}
+            <svg viewBox="0 0 24 24">${statusConfig.icon}</svg>
+            ${statusConfig.label}
           </span>
           ${this.renderActions()}
         </div>

@@ -5,11 +5,7 @@ import { createServer, type Server } from "http";
 import { SessionManager } from "../infra/index.js";
 import { ConfigManager, type Config } from "../config/index.js";
 import {
-  AnthropicProvider,
-  OpenAIProvider,
-  GoogleProvider,
-  OllamaProvider,
-  GLMProvider,
+  AgentSDKProvider,
   type LLMProvider,
   type Message,
 } from "../llm/index.js";
@@ -27,7 +23,20 @@ import {
 } from "../connectors/index.js";
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown error";
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "Unknown error";
+}
+
+function sendResponse(
+  ws: WebSocket,
+  id: string,
+  ok: boolean,
+  payload?: unknown,
+  error?: { code: string; message: string },
+): void {
+  ws.send(JSON.stringify(createResponse(id, ok, payload, error)));
 }
 
 function sendError(
@@ -36,13 +45,11 @@ function sendError(
   code: string,
   message: string,
 ): void {
-  ws.send(
-    JSON.stringify(createResponse(id, false, undefined, { code, message })),
-  );
+  sendResponse(ws, id, false, undefined, { code, message });
 }
 
 function sendSuccess(ws: WebSocket, id: string, payload?: unknown): void {
-  ws.send(JSON.stringify(createResponse(id, true, payload)));
+  sendResponse(ws, id, true, payload);
 }
 
 export class GatewayServer {
@@ -86,26 +93,10 @@ export class GatewayServer {
   }
 
   private createLLMProvider(config: Config["llm"]): LLMProvider {
-    const providerConfig = {
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl,
-      defaultModel: config.model,
-      defaultTemperature: config.temperature,
-      defaultMaxTokens: config.maxTokens,
-    };
-
-    switch (config.provider) {
-      case "anthropic":
-        return new AnthropicProvider(providerConfig);
-      case "openai":
-        return new OpenAIProvider(providerConfig);
-      case "google":
-        return new GoogleProvider(providerConfig);
-      case "ollama":
-        return new OllamaProvider(providerConfig);
-      case "glm":
-        return new GLMProvider(providerConfig);
-    }
+    return new AgentSDKProvider({
+      model: config.model,
+      systemPrompt: config.systemPrompt,
+    });
   }
 
   private setupRoutes(): void {
@@ -167,9 +158,7 @@ export class GatewayServer {
   ): Promise<void> {
     switch (frame.method) {
       case "ping":
-        ws.send(
-          JSON.stringify(createResponse(frame.id, true, { pong: Date.now() })),
-        );
+        sendSuccess(ws, frame.id, { pong: Date.now() });
         break;
 
       case "chat.send":
@@ -177,38 +166,16 @@ export class GatewayServer {
         break;
 
       case "config.get":
-        ws.send(
-          JSON.stringify(
-            createResponse(frame.id, true, {
-              config: this.configManager.get(),
-            }),
-          ),
-        );
+        sendSuccess(ws, frame.id, { config: this.configManager.get() });
         break;
 
       case "config.set":
         try {
           const configUpdate = frame.params as Partial<Config>;
           this.configManager.set(configUpdate);
-          ws.send(
-            JSON.stringify(
-              createResponse(frame.id, true, {
-                config: this.configManager.get(),
-              }),
-            ),
-          );
+          sendSuccess(ws, frame.id, { config: this.configManager.get() });
         } catch (error) {
-          ws.send(
-            JSON.stringify(
-              createResponse(frame.id, false, undefined, {
-                code: "CONFIG_ERROR",
-                message:
-                  error instanceof Error
-                    ? error.message
-                    : "Failed to set config",
-              }),
-            ),
-          );
+          sendError(ws, frame.id, "CONFIG_ERROR", getErrorMessage(error));
         }
         break;
 
@@ -237,13 +204,11 @@ export class GatewayServer {
         break;
 
       default:
-        ws.send(
-          JSON.stringify(
-            createResponse(frame.id, false, undefined, {
-              code: "UNKNOWN_METHOD",
-              message: `Unknown method: ${frame.method}`,
-            }),
-          ),
+        sendError(
+          ws,
+          frame.id,
+          "UNKNOWN_METHOD",
+          `Unknown method: ${frame.method}`,
         );
     }
   }
@@ -262,14 +227,9 @@ export class GatewayServer {
     ws: WebSocket,
     frame: RequestFrame,
   ): Promise<void> {
-    console.log(
-      "[Gateway] handleChatSend called:",
-      JSON.stringify(frame.params),
-    );
     try {
       const params = frame.params as { message: string; history?: Message[] };
       const config = this.configManager.get();
-      console.log("[Gateway] LLM config:", JSON.stringify(config.llm));
       const provider = this.createLLMProvider(config.llm);
 
       const messages: Message[] = [
@@ -277,27 +237,17 @@ export class GatewayServer {
         { role: "user", content: params.message },
       ];
 
-      const options = {
-        systemPrompt: config.llm.systemPrompt,
-      };
+      const options = { systemPrompt: config.llm.systemPrompt };
 
-      // Stream response
       for await (const chunk of provider.chatStream(messages, options)) {
         ws.send(JSON.stringify(createEvent("chat.chunk", { text: chunk })));
       }
 
       ws.send(JSON.stringify(createEvent("chat.done", {})));
-      ws.send(JSON.stringify(createResponse(frame.id, true)));
+      sendSuccess(ws, frame.id);
     } catch (error) {
       console.error("LLM Error:", error);
-      ws.send(
-        JSON.stringify(
-          createResponse(frame.id, false, undefined, {
-            code: "LLM_ERROR",
-            message: error instanceof Error ? error.message : "LLM call failed",
-          }),
-        ),
-      );
+      sendError(ws, frame.id, "LLM_ERROR", getErrorMessage(error));
     }
   }
 
@@ -317,21 +267,9 @@ export class GatewayServer {
       ];
 
       const response = await provider.chat(testMessages);
-      ws.send(
-        JSON.stringify(
-          createResponse(frame.id, true, { success: true, response }),
-        ),
-      );
+      sendSuccess(ws, frame.id, { success: true, response });
     } catch (error) {
-      ws.send(
-        JSON.stringify(
-          createResponse(frame.id, false, undefined, {
-            code: "LLM_TEST_FAILED",
-            message:
-              error instanceof Error ? error.message : "Connection test failed",
-          }),
-        ),
-      );
+      sendError(ws, frame.id, "LLM_TEST_FAILED", getErrorMessage(error));
     }
   }
 

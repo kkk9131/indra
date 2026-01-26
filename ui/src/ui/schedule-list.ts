@@ -1,5 +1,8 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, svg } from "lit";
 import { customElement, property } from "lit/decorators.js";
+
+// Lucide icon - Clock
+const clockIcon = svg`<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>`;
 
 export interface ScheduleItem {
   id: string;
@@ -70,7 +73,20 @@ export class ScheduleListElement extends LitElement {
     }
 
     .time-icon {
-      font-size: 14px;
+      width: 14px;
+      height: 14px;
+      display: flex;
+      align-items: center;
+    }
+
+    .time-icon svg {
+      width: 100%;
+      height: 100%;
+      fill: none;
+      stroke: var(--primary, #2e7d32);
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
 
     .platform {
@@ -121,7 +137,9 @@ export class ScheduleListElement extends LitElement {
           (item) => html`
             <div class="item">
               <div class="time">
-                <span class="time-icon">🕐</span>
+                <span class="time-icon"
+                  ><svg viewBox="0 0 24 24">${clockIcon}</svg></span
+                >
                 <span>${item.time}</span>
               </div>
               <div class="platform">${item.platform === "x" ? "X" : "n"}</div>

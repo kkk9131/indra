@@ -1,14 +1,8 @@
 import { z } from "zod";
-import { ProviderIdSchema } from "../llm/types.js";
 
 export const LLMConfigSchema = z.object({
-  provider: ProviderIdSchema.default("anthropic"),
-  apiKey: z.string().optional(),
-  model: z.string().default("claude-sonnet-4-20250514"),
-  temperature: z.number().min(0).max(2).default(0.7),
-  maxTokens: z.number().positive().default(2048),
+  model: z.string().default("sonnet"),
   systemPrompt: z.string().optional(),
-  baseUrl: z.string().optional(),
 });
 export type LLMConfig = z.infer<typeof LLMConfigSchema>;
 

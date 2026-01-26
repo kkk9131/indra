@@ -1,8 +1,11 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import type { Content, ContentStatus, Platform } from "./types.js";
 import "./common/content-card.js";
 import "./common/modal.js";
+
+// Lucide icon - Check Circle
+const checkCircleIcon = svg`<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>`;
 
 type FilterOption = Platform | "all";
 type SortOption = "date-desc" | "date-asc";
@@ -75,8 +78,19 @@ export class ApprovalPageElement extends LitElement {
     }
 
     .empty-state-icon {
-      font-size: 48px;
-      margin-bottom: 16px;
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 16px;
+    }
+
+    .empty-state-icon svg {
+      width: 100%;
+      height: 100%;
+      fill: none;
+      stroke: var(--text-secondary, #636e72);
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
 
     .empty-state-text {
@@ -192,17 +206,18 @@ export class ApprovalPageElement extends LitElement {
       content: Content;
     };
 
-    switch (action) {
-      case "approve":
-        this.updateStatus(content.id, "approved");
-        break;
-      case "reject":
-        this.updateStatus(content.id, "rejected");
-        break;
-      case "preview":
-      case "edit":
-        this.previewContent = content;
-        break;
+    const statusActions: Record<string, ContentStatus> = {
+      approve: "approved",
+      reject: "rejected",
+    };
+
+    if (action in statusActions) {
+      this.updateStatus(content.id, statusActions[action]);
+      return;
+    }
+
+    if (action === "preview" || action === "edit") {
+      this.previewContent = content;
     }
   }
 
@@ -258,7 +273,9 @@ export class ApprovalPageElement extends LitElement {
             )
           : html`
               <div class="empty-state">
-                <div class="empty-state-icon">&#x2705;</div>
+                <div class="empty-state-icon">
+                  <svg viewBox="0 0 24 24">${checkCircleIcon}</svg>
+                </div>
                 <div class="empty-state-text">No pending contents</div>
               </div>
             `}
