@@ -386,3 +386,60 @@ Phase 3 コード品質改善
 - X API認証設定（環境変数）
 - UIバックエンド連携（モック → リアルデータ）
 - note Connector実装
+
+---
+
+## 2026-01-26 16:59 [REFACTOR] Claude Agent SDK統合・絵文字→SVGアイコン統一
+
+### 実装内容
+
+- **LLMプロバイダー統合:**
+  - `src/llm/agent-sdk.ts` - AgentSDKProvider新規作成（@anthropic-ai/claude-agent-sdk使用）
+  - 旧プロバイダー5ファイル削除（anthropic, openai, google, ollama, glm）
+  - `src/llm/types.ts` - 簡素化（ProviderId削除、temperature/maxTokens削除）
+  - `src/config/schema.ts` - LLMConfig簡素化（model + systemPromptのみ）
+  - `src/gateway/server.ts` - AgentSDKProviderのみ使用
+  - `src/commands/config.ts` - モデル選択（sonnet/opus/haiku）のみに変更
+- **UI絵文字→SVGアイコン統一:**
+  - `settings-page.ts` - Bot icon追加、provider-badge表示
+  - `schedule-list.ts` - Clock icon追加
+  - `common/styles.ts` - STATUS_CONFIGをSVG化（pending/approved/rejected/posted/scheduled）
+  - `content-card.ts`, `contents-page.ts` - status-badge SVG対応
+  - `approval-page.ts` - Check Circle icon追加
+  - `schedule-page.ts` - Calendar icon追加
+- **code-simplifierリファクタリング:**
+  - `extractTextFromContent()`, `buildQueryOptions()`, `resolveModel()` 抽出
+  - `sendResponse()` 共通化、lookup objectパターン導入
+  - `matchesStatus()`, `matchesPlatform()`, `matchesSearch()` 抽出
+
+### 成功
+
+- Claude Agent SDK動作確認（サブスクリプション認証、APIキー不要）
+- chat/chatStream両方正常動作
+- 全13ファイルのアイコン統一完了
+- テスト12件パス、ビルドエラーなし
+
+### 削除ファイル
+
+- `src/llm/anthropic.ts`
+- `src/llm/openai.ts`
+- `src/llm/google.ts`
+- `src/llm/ollama.ts`
+- `src/llm/glm.ts`
+
+### 依存関係変更
+
+- 追加: `@anthropic-ai/claude-agent-sdk ^0.2.19`
+- 削除: `@anthropic-ai/sdk`, `@google/generative-ai`, `openai`
+
+### 学び
+
+- Claude Agent SDKはサブスク認証で動作（ANTHROPIC_API_KEY不要）
+- Lucide SVGをLit `svg` タグでインライン化すると一貫したアイコンシステム構築可能
+- `STATUS_CONFIG` の型を `string` → `ReturnType<typeof svg>` に変更でSVG対応
+- lookup objectパターンでswitch文をデータ駆動に置換可能
+
+### 次のステップ
+
+- Agent SDKのツール機能活用（将来）
+- UI画面のリアルバックエンド連携

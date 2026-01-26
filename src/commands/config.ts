@@ -2,23 +2,12 @@ import { Command } from "commander";
 import * as p from "@clack/prompts";
 import chalk from "chalk";
 import { ConfigManager, type LLMConfig } from "../config/index.js";
-import type { ProviderId } from "../llm/index.js";
 
-const PROVIDERS: { value: ProviderId; label: string }[] = [
-  { value: "anthropic", label: "Anthropic Claude" },
-  { value: "openai", label: "OpenAI" },
-  { value: "google", label: "Google Gemini" },
-  { value: "ollama", label: "Ollama (Local)" },
-  { value: "glm", label: "GLM (Z.ai)" },
+const MODELS = [
+  { value: "sonnet", label: "Claude Sonnet (Recommended)" },
+  { value: "opus", label: "Claude Opus" },
+  { value: "haiku", label: "Claude Haiku" },
 ];
-
-const DEFAULT_MODELS: Record<ProviderId, string> = {
-  anthropic: "claude-sonnet-4-20250514",
-  openai: "gpt-4o",
-  google: "gemini-2.0-flash",
-  ollama: "llama3.2",
-  glm: "glm-4.7-flash",
-};
 
 export function registerConfigCommand(cli: Command): void {
   cli
@@ -74,12 +63,8 @@ async function viewConfig(configManager: ConfigManager): Promise<void> {
       `  Notifications: ${config.general.notifications}`,
       `  Auto-save: ${config.general.autoSave}`,
       "",
-      chalk.bold("LLM:"),
-      `  Provider: ${config.llm.provider}`,
+      chalk.bold("LLM (Claude Agent SDK):"),
       `  Model: ${config.llm.model}`,
-      `  Temperature: ${config.llm.temperature}`,
-      `  Max Tokens: ${config.llm.maxTokens}`,
-      `  API Key: ${config.llm.apiKey ? "****" + config.llm.apiKey.slice(-4) : "(not set)"}`,
       `  System Prompt: ${config.llm.systemPrompt ?? "(not set)"}`,
     ].join("\n"),
     "Current Configuration",
@@ -89,76 +74,13 @@ async function viewConfig(configManager: ConfigManager): Promise<void> {
 async function editLLMConfig(configManager: ConfigManager): Promise<void> {
   const current = configManager.get();
 
-  const provider = await p.select({
-    message: "Select LLM provider",
-    options: PROVIDERS,
-    initialValue: current.llm.provider,
-  });
-
-  if (p.isCancel(provider)) {
-    p.cancel("Operation cancelled");
-    return;
-  }
-
-  const providerId = provider as ProviderId;
-
-  const apiKey = await p.text({
-    message: "API Key (leave empty to keep current)",
-    placeholder: current.llm.apiKey
-      ? "****" + current.llm.apiKey.slice(-4)
-      : "sk-...",
-    validate: () => undefined,
-  });
-
-  if (p.isCancel(apiKey)) {
-    p.cancel("Operation cancelled");
-    return;
-  }
-
-  const model = await p.text({
-    message: "Model name",
-    placeholder: DEFAULT_MODELS[providerId],
-    initialValue:
-      providerId === current.llm.provider
-        ? current.llm.model
-        : DEFAULT_MODELS[providerId],
+  const model = await p.select({
+    message: "Select model",
+    options: MODELS,
+    initialValue: current.llm.model,
   });
 
   if (p.isCancel(model)) {
-    p.cancel("Operation cancelled");
-    return;
-  }
-
-  const temperature = await p.text({
-    message: "Temperature (0.0 - 2.0)",
-    initialValue: String(current.llm.temperature),
-    validate: (value) => {
-      const num = parseFloat(value);
-      if (isNaN(num) || num < 0 || num > 2) {
-        return "Temperature must be between 0.0 and 2.0";
-      }
-      return undefined;
-    },
-  });
-
-  if (p.isCancel(temperature)) {
-    p.cancel("Operation cancelled");
-    return;
-  }
-
-  const maxTokens = await p.text({
-    message: "Max Tokens",
-    initialValue: String(current.llm.maxTokens),
-    validate: (value) => {
-      const num = parseInt(value, 10);
-      if (isNaN(num) || num < 1) {
-        return "Max tokens must be a positive number";
-      }
-      return undefined;
-    },
-  });
-
-  if (p.isCancel(maxTokens)) {
     p.cancel("Operation cancelled");
     return;
   }
@@ -175,11 +97,7 @@ async function editLLMConfig(configManager: ConfigManager): Promise<void> {
   }
 
   const llmConfig: LLMConfig = {
-    provider: providerId,
-    apiKey: apiKey || current.llm.apiKey,
-    model: model || DEFAULT_MODELS[providerId],
-    temperature: parseFloat(temperature as string),
-    maxTokens: parseInt(maxTokens as string, 10),
+    model: model as string,
     systemPrompt: systemPrompt || undefined,
   };
 

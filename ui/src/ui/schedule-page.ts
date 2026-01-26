@@ -1,8 +1,11 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import type { Content, Platform } from "./types.js";
 import "./common/platform-badge.js";
 import "./common/modal.js";
+
+// Lucide icon - Calendar
+const calendarIcon = svg`<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>`;
 
 interface ScheduledContent extends Content {
   scheduledAt: number;
@@ -185,8 +188,19 @@ export class SchedulePageElement extends LitElement {
     }
 
     .empty-state-icon {
-      font-size: 48px;
-      margin-bottom: 16px;
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 16px;
+    }
+
+    .empty-state-icon svg {
+      width: 100%;
+      height: 100%;
+      fill: none;
+      stroke: var(--text-secondary, #636e72);
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
 
     .form-group {
@@ -327,49 +341,51 @@ export class SchedulePageElement extends LitElement {
     this.contents = mockData.sort((a, b) => a.scheduledAt - b.scheduledAt);
   }
 
-  private getStartOfToday(): number {
+  private getStartOfDay(date: Date): number {
+    return new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+    ).getTime();
+  }
+
+  private isInToday(scheduledAt: number): boolean {
+    const today = this.getStartOfDay(new Date());
+    const itemDay = this.getStartOfDay(new Date(scheduledAt));
+    return itemDay === today;
+  }
+
+  private isInWeek(scheduledAt: number): boolean {
     const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(endOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+    return (
+      scheduledAt >= startOfWeek.getTime() && scheduledAt <= endOfWeek.getTime()
+    );
+  }
+
+  private isInMonth(scheduledAt: number): boolean {
+    const now = new Date();
+    const itemDate = new Date(scheduledAt);
+    return (
+      itemDate.getMonth() === now.getMonth() &&
+      itemDate.getFullYear() === now.getFullYear()
+    );
   }
 
   private getFilteredContents(): ScheduledContent[] {
-    const now = new Date();
-    const startOfToday = this.getStartOfToday();
+    const filters: Record<ViewMode, (scheduledAt: number) => boolean> = {
+      today: (t) => this.isInToday(t),
+      week: (t) => this.isInWeek(t),
+      month: (t) => this.isInMonth(t),
+    };
 
-    return this.contents.filter((item) => {
-      const itemDate = new Date(item.scheduledAt);
-
-      switch (this.viewMode) {
-        case "today": {
-          const itemStartOfDay = new Date(
-            itemDate.getFullYear(),
-            itemDate.getMonth(),
-            itemDate.getDate(),
-          ).getTime();
-          return itemStartOfDay === startOfToday;
-        }
-        case "week": {
-          const startOfWeek = new Date(now);
-          startOfWeek.setDate(now.getDate() - now.getDay());
-          startOfWeek.setHours(0, 0, 0, 0);
-          const endOfWeek = new Date(startOfWeek);
-          endOfWeek.setDate(endOfWeek.getDate() + 6);
-          endOfWeek.setHours(23, 59, 59, 999);
-          return (
-            item.scheduledAt >= startOfWeek.getTime() &&
-            item.scheduledAt <= endOfWeek.getTime()
-          );
-        }
-        case "month": {
-          return (
-            itemDate.getMonth() === now.getMonth() &&
-            itemDate.getFullYear() === now.getFullYear()
-          );
-        }
-        default:
-          return true;
-      }
-    });
+    const filter = filters[this.viewMode];
+    return this.contents.filter((item) => filter(item.scheduledAt));
   }
 
   private formatDateString(timestamp: number): string {
@@ -412,7 +428,9 @@ export class SchedulePageElement extends LitElement {
   }
 
   private handleSaveEdit(): void {
-    if (!this.editingContent) return;
+    if (!this.editingContent) {
+      return;
+    }
 
     const newDate = new Date(this.editedTimeInput).getTime();
     if (Number.isNaN(newDate)) {
@@ -420,8 +438,9 @@ export class SchedulePageElement extends LitElement {
       return;
     }
 
+    const editingId = this.editingContent.id;
     this.contents = this.contents.map((c) =>
-      c.id === this.editingContent!.id
+      c.id === editingId
         ? { ...c, scheduledAt: newDate, updatedAt: Date.now() }
         : c,
     );
@@ -481,7 +500,9 @@ export class SchedulePageElement extends LitElement {
         ${filtered.length === 0
           ? html`
               <div class="empty-state">
-                <div class="empty-state-icon">&#x1F4C5;</div>
+                <div class="empty-state-icon">
+                  <svg viewBox="0 0 24 24">${calendarIcon}</svg>
+                </div>
                 <div>予定された投稿はありません</div>
               </div>
             `

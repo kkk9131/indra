@@ -276,6 +276,16 @@ export class ContentsPageElement extends LitElement {
       font-weight: 500;
     }
 
+    .status-badge svg {
+      width: 14px;
+      height: 14px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
     .empty-state {
       padding: 48px;
       text-align: center;
@@ -296,21 +306,37 @@ export class ContentsPageElement extends LitElement {
   @state()
   private contents: Content[] = MOCK_CONTENTS;
 
+  private matchesStatus(content: Content): boolean {
+    return (
+      this.selectedStatus === "all" || content.status === this.selectedStatus
+    );
+  }
+
+  private matchesPlatform(content: Content): boolean {
+    return (
+      this.selectedPlatform === "all" ||
+      content.platform === this.selectedPlatform
+    );
+  }
+
+  private matchesSearch(content: Content): boolean {
+    if (this.searchQuery === "") {
+      return true;
+    }
+    const query = this.searchQuery.toLowerCase();
+    return (
+      content.text.toLowerCase().includes(query) ||
+      content.accountId.toLowerCase().includes(query)
+    );
+  }
+
   private get filteredContents(): Content[] {
-    return this.contents.filter((content) => {
-      const matchesStatus =
-        this.selectedStatus === "all" || content.status === this.selectedStatus;
-      const matchesPlatform =
-        this.selectedPlatform === "all" ||
-        content.platform === this.selectedPlatform;
-      const matchesSearch =
-        this.searchQuery === "" ||
-        content.text.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-        content.accountId
-          .toLowerCase()
-          .includes(this.searchQuery.toLowerCase());
-      return matchesStatus && matchesPlatform && matchesSearch;
-    });
+    return this.contents.filter(
+      (content) =>
+        this.matchesStatus(content) &&
+        this.matchesPlatform(content) &&
+        this.matchesSearch(content),
+    );
   }
 
   private formatDate(timestamp: number): string {
@@ -424,7 +450,8 @@ export class ContentsPageElement extends LitElement {
                             class="status-badge"
                             style="background: ${statusConfig.color}20; color: ${statusConfig.color};"
                           >
-                            ${statusConfig.icon} ${statusConfig.label}
+                            <svg viewBox="0 0 24 24">${statusConfig.icon}</svg>
+                            ${statusConfig.label}
                           </span>
                         </td>
                         <td class="table-cell cell-date">

@@ -1,17 +1,15 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 
+// Lucide icon - Bot
+const botIcon = svg`<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>`;
+
 type TabId = "general" | "llm" | "sns" | "cron";
-type ProviderId = "anthropic" | "openai" | "google" | "ollama" | "glm";
 type Language = "en" | "ja" | "zh";
 type Theme = "light" | "dark" | "auto";
 
 interface LLMConfig {
-  provider: ProviderId;
-  apiKey?: string;
   model: string;
-  temperature: number;
-  maxTokens: number;
   systemPrompt?: string;
 }
 
@@ -34,21 +32,11 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "cron", label: "Cron" },
 ];
 
-const PROVIDERS: { value: ProviderId; label: string }[] = [
-  { value: "anthropic", label: "Anthropic Claude" },
-  { value: "openai", label: "OpenAI" },
-  { value: "google", label: "Google Gemini" },
-  { value: "ollama", label: "Ollama (Local)" },
-  { value: "glm", label: "GLM (Z.ai)" },
+const MODELS = [
+  { value: "sonnet", label: "Claude Sonnet (Recommended)" },
+  { value: "opus", label: "Claude Opus" },
+  { value: "haiku", label: "Claude Haiku" },
 ];
-
-const DEFAULT_MODELS: Record<ProviderId, string> = {
-  anthropic: "claude-sonnet-4-20250514",
-  openai: "gpt-4o",
-  google: "gemini-2.0-flash",
-  ollama: "llama3.2",
-  glm: "glm-4.7-flash",
-};
 
 @customElement("indra-settings-page")
 export class SettingsPageElement extends LitElement {
@@ -160,6 +148,42 @@ export class SettingsPageElement extends LitElement {
       color: var(--primary, #2e7d32);
       padding-bottom: 12px;
       border-bottom: 2px solid var(--bg-tertiary, #f5f5f5);
+    }
+
+    .provider-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: var(--bg-primary, #e8f5e9);
+      border-radius: 8px;
+      margin-bottom: 24px;
+    }
+
+    .provider-badge .icon {
+      width: 24px;
+      height: 24px;
+    }
+
+    .provider-badge .icon svg {
+      width: 100%;
+      height: 100%;
+      fill: none;
+      stroke: var(--primary, #2e7d32);
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .provider-badge .text {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--primary, #2e7d32);
+    }
+
+    .provider-badge .subtext {
+      font-size: 12px;
+      color: var(--text-secondary, #636e72);
     }
 
     .btn {
@@ -289,11 +313,7 @@ export class SettingsPageElement extends LitElement {
       autoSave: true,
     },
     llm: {
-      provider: "anthropic",
-      apiKey: "",
-      model: "claude-sonnet-4-20250514",
-      temperature: 0.7,
-      maxTokens: 2048,
+      model: "sonnet",
       systemPrompt: "",
     },
   };
@@ -386,6 +406,17 @@ export class SettingsPageElement extends LitElement {
     });
   }
 
+  private getErrorText(error: unknown): string {
+    return error instanceof Error ? error.message : "Unknown error";
+  }
+
+  private setError(prefix: string, error: unknown): void {
+    this.statusMessage = {
+      type: "error",
+      text: `${prefix}: ${this.getErrorText(error)}`,
+    };
+  }
+
   private async loadConfig(): Promise<void> {
     try {
       this.loading = true;
@@ -394,10 +425,7 @@ export class SettingsPageElement extends LitElement {
       };
       this.config = result.config;
     } catch (error) {
-      this.statusMessage = {
-        type: "error",
-        text: `Failed to load config: ${error instanceof Error ? error.message : "Unknown error"}`,
-      };
+      this.setError("Failed to load config", error);
     } finally {
       this.loading = false;
     }
@@ -413,10 +441,7 @@ export class SettingsPageElement extends LitElement {
       this.config = result.config;
       this.statusMessage = { type: "success", text: "Configuration saved!" };
     } catch (error) {
-      this.statusMessage = {
-        type: "error",
-        text: `Failed to save config: ${error instanceof Error ? error.message : "Unknown error"}`,
-      };
+      this.setError("Failed to save config", error);
     } finally {
       this.loading = false;
     }
@@ -427,10 +452,8 @@ export class SettingsPageElement extends LitElement {
       this.testingConnection = true;
       this.statusMessage = null;
 
-      // First save current config
       await this.sendRequest("config.set", this.config);
 
-      // Then test connection
       const result = (await this.sendRequest("llm.test")) as {
         success: boolean;
         response: string;
@@ -440,10 +463,7 @@ export class SettingsPageElement extends LitElement {
         text: `Connection successful! Response: ${result.response.slice(0, 100)}...`,
       };
     } catch (error) {
-      this.statusMessage = {
-        type: "error",
-        text: `Connection failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-      };
+      this.setError("Connection failed", error);
     } finally {
       this.testingConnection = false;
     }
@@ -464,49 +484,36 @@ export class SettingsPageElement extends LitElement {
     };
   }
 
-  private handleProviderChange(e: Event): void {
+  private handleModelChange(e: Event): void {
     const select = e.target as HTMLSelectElement;
-    const provider = select.value as ProviderId;
     this.config = {
       ...this.config,
       llm: {
         ...this.config.llm,
-        provider,
-        model: DEFAULT_MODELS[provider],
+        model: select.value,
       },
     };
   }
 
-  private handleLLMInputChange(field: keyof LLMConfig, e: Event): void {
-    const target = e.target as HTMLInputElement | HTMLTextAreaElement;
-    let value: string | number = target.value;
-
-    if (field === "temperature") {
-      value = parseFloat(value) || 0.7;
-    } else if (field === "maxTokens") {
-      value = parseInt(value, 10) || 2048;
-    }
-
+  private handleSystemPromptChange(e: Event): void {
+    const target = e.target as HTMLTextAreaElement;
     this.config = {
       ...this.config,
       llm: {
         ...this.config.llm,
-        [field]: value,
+        systemPrompt: target.value || undefined,
       },
     };
   }
 
   private renderTabContent() {
-    switch (this.activeTab) {
-      case "general":
-        return this.renderGeneralTab();
-      case "llm":
-        return this.renderLLMTab();
-      case "sns":
-        return this.renderSNSTab();
-      case "cron":
-        return this.renderCronTab();
-    }
+    const tabRenderers: Record<TabId, () => ReturnType<typeof html>> = {
+      general: () => this.renderGeneralTab(),
+      llm: () => this.renderLLMTab(),
+      sns: () => this.renderSNSTab(),
+      cron: () => this.renderCronTab(),
+    };
+    return tabRenderers[this.activeTab]();
   }
 
   private renderGeneralTab() {
@@ -603,63 +610,27 @@ export class SettingsPageElement extends LitElement {
           </div>`
         : ""}
 
-      <div class="form-group">
-        <label>Provider</label>
-        <select
-          .value="${this.config.llm.provider}"
-          @change="${this.handleProviderChange}"
-        >
-          ${PROVIDERS.map(
-            (p) => html`<option value="${p.value}">${p.label}</option>`,
-          )}
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label>API Key</label>
-        <input
-          type="password"
-          placeholder="sk-..."
-          .value="${this.config.llm.apiKey ?? ""}"
-          @input="${(e: Event) => this.handleLLMInputChange("apiKey", e)}"
-        />
-        <div class="description">Your API key for the selected provider</div>
-      </div>
-
-      <div class="form-group">
-        <label>Model</label>
-        <input
-          type="text"
-          placeholder="${DEFAULT_MODELS[this.config.llm.provider]}"
-          .value="${this.config.llm.model}"
-          @input="${(e: Event) => this.handleLLMInputChange("model", e)}"
-        />
-      </div>
-
-      <div class="form-group">
-        <label>Temperature</label>
-        <input
-          type="number"
-          min="0"
-          max="2"
-          step="0.1"
-          .value="${String(this.config.llm.temperature)}"
-          @input="${(e: Event) => this.handleLLMInputChange("temperature", e)}"
-        />
-        <div class="description">
-          Controls randomness: 0.0 = focused, 2.0 = creative
+      <div class="provider-badge">
+        <span class="icon"><svg viewBox="0 0 24 24">${botIcon}</svg></span>
+        <div>
+          <div class="text">Claude Agent SDK</div>
+          <div class="subtext">Using Claude subscription authentication</div>
         </div>
       </div>
 
       <div class="form-group">
-        <label>Max Tokens</label>
-        <input
-          type="number"
-          min="1"
-          step="1"
-          .value="${String(this.config.llm.maxTokens)}"
-          @input="${(e: Event) => this.handleLLMInputChange("maxTokens", e)}"
-        />
+        <label>Model</label>
+        <select
+          .value="${this.config.llm.model}"
+          @change="${this.handleModelChange}"
+        >
+          ${MODELS.map(
+            (m) => html`<option value="${m.value}">${m.label}</option>`,
+          )}
+        </select>
+        <div class="description">
+          Select the Claude model to use for AI interactions
+        </div>
       </div>
 
       <div class="form-group">
@@ -667,8 +638,11 @@ export class SettingsPageElement extends LitElement {
         <textarea
           placeholder="You are a helpful assistant..."
           .value="${this.config.llm.systemPrompt ?? ""}"
-          @input="${(e: Event) => this.handleLLMInputChange("systemPrompt", e)}"
+          @input="${this.handleSystemPromptChange}"
         ></textarea>
+        <div class="description">
+          Optional instructions that guide the AI's behavior
+        </div>
       </div>
 
       <div class="actions">
