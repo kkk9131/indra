@@ -38,4 +38,6 @@ export interface SNSConnectorConfig {
   apiSecret?: string;
   accessToken?: string;
   accessSecret?: string;
+  // OAuth 2.0 PKCE token (takes priority over OAuth 1.0a)
+  oauth2AccessToken?: string;
 }

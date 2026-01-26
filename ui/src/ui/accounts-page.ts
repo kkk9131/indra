@@ -1,16 +1,29 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import type { Account, Platform } from "./types.js";
+import { wsClient } from "../services/ws-client.js";
 import "./common/platform-badge.js";
 import "./common/modal.js";
+import "./x-auth-modal.js";
+
+// X logo for the connect button
+const xLogo = svg`<path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>`;
 
 type AccountStatus = Account["status"];
 
 const STATUS_LABELS: Record<AccountStatus, string> = {
-  active: "\u2705 Active",
-  expired: "\u26A0\uFE0F Expired",
-  error: "\u274C Error",
+  active: "Active",
+  expired: "Expired",
+  error: "Error",
 };
+
+interface XAuthStatus {
+  authenticated: boolean;
+  expired: boolean;
+  username?: string;
+  oauth2Configured: boolean;
+  oauth1Configured: boolean;
+}
 
 @customElement("indra-accounts-page")
 export class AccountsPageElement extends LitElement {
@@ -43,6 +56,9 @@ export class AccountsPageElement extends LitElement {
       cursor: pointer;
       font-family: var(--font-family, "Geist Mono", monospace);
       transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .btn-primary {
@@ -53,6 +69,16 @@ export class AccountsPageElement extends LitElement {
 
     .btn-primary:hover {
       background: #1b5e20;
+    }
+
+    .btn-x {
+      background: #000;
+      color: #fff;
+      border: none;
+    }
+
+    .btn-x:hover {
+      background: #333;
     }
 
     .btn-secondary {
@@ -78,6 +104,31 @@ export class AccountsPageElement extends LitElement {
     .btn-sm {
       padding: 6px 12px;
       font-size: 12px;
+    }
+
+    .btn-icon {
+      width: 16px;
+      height: 16px;
+    }
+
+    .btn-icon svg {
+      width: 100%;
+      height: 100%;
+      fill: currentColor;
+    }
+
+    .section {
+      margin-bottom: 32px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary, #2d3436);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .account-grid {
@@ -198,47 +249,117 @@ export class AccountsPageElement extends LitElement {
       gap: 12px;
       justify-content: flex-end;
     }
+
+    .x-connect-card {
+      background: linear-gradient(135deg, #1a1a1a 0%, #333 100%);
+      color: white;
+      padding: 24px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .x-connect-info {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .x-connect-title {
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .x-connect-title svg {
+      width: 20px;
+      height: 20px;
+      fill: white;
+    }
+
+    .x-connect-description {
+      font-size: 13px;
+      color: #b0b0b0;
+    }
+
+    .x-connected-status {
+      font-size: 13px;
+      color: #81c784;
+    }
+
+    .auth-method-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 500;
+      background: rgba(255, 255, 255, 0.1);
+      color: #b0b0b0;
+      margin-left: 8px;
+    }
   `;
 
   @state()
-  private accounts: Account[] = [
-    {
-      id: "1",
-      platform: "x",
-      accountName: "@tech_kazuto",
-      displayName: "Tech & AI についてのアカウント",
-      status: "active",
-      contentCount: 45,
-      lastPostedAt: Date.now() - 1000 * 60 * 60 * 24,
-    },
-    {
-      id: "2",
-      platform: "note",
-      accountName: "@kazuto",
-      displayName: "長文記事用アカウント",
-      status: "expired",
-      contentCount: 12,
-      lastPostedAt: Date.now() - 1000 * 60 * 60 * 48,
-    },
-    {
-      id: "3",
-      platform: "youtube",
-      accountName: "@dev_kazuto",
-      displayName: "開発ログ動画チャンネル",
-      status: "error",
-      contentCount: 8,
-      lastPostedAt: Date.now() - 1000 * 60 * 60 * 72,
-    },
-  ];
+  private accounts: Account[] = [];
 
   @state()
   private isModalOpen = false;
+
+  @state()
+  private isXAuthModalOpen = false;
 
   @state()
   private newAccountPlatform: Platform = "x";
 
   @state()
   private newAccountName = "";
+
+  @state()
+  private xAuthStatus: XAuthStatus | null = null;
+
+  @state()
+  private isConnected = false;
+
+  private handleConnected = () => {
+    this.isConnected = true;
+    this.loadXAuthStatus();
+  };
+
+  private handleDisconnected = () => {
+    this.isConnected = false;
+  };
+
+  connectedCallback() {
+    super.connectedCallback();
+
+    wsClient.addEventListener("connected", this.handleConnected);
+    wsClient.addEventListener("disconnected", this.handleDisconnected);
+
+    if (!wsClient.isConnected) {
+      wsClient.connect();
+    } else {
+      this.isConnected = true;
+      this.loadXAuthStatus();
+    }
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    wsClient.removeEventListener("connected", this.handleConnected);
+    wsClient.removeEventListener("disconnected", this.handleDisconnected);
+  }
+
+  private async loadXAuthStatus(): Promise<void> {
+    try {
+      this.xAuthStatus = (await wsClient.authXStatus()) as XAuthStatus;
+    } catch (err) {
+      console.error("Failed to load X auth status:", err);
+    }
+  }
 
   private formatDate(timestamp?: number): string {
     if (!timestamp) return "-";
@@ -251,7 +372,7 @@ export class AccountsPageElement extends LitElement {
   }
 
   private handleDelete(id: string): void {
-    if (confirm("このアカウントを削除しますか？")) {
+    if (confirm("Delete this account?")) {
       this.accounts = this.accounts.filter((acc) => acc.id !== id);
     }
   }
@@ -276,6 +397,32 @@ export class AccountsPageElement extends LitElement {
     this.newAccountPlatform = "x";
   }
 
+  private openXAuthModal(): void {
+    this.isXAuthModalOpen = true;
+  }
+
+  private closeXAuthModal(): void {
+    this.isXAuthModalOpen = false;
+  }
+
+  private handleXAuthenticated(e: CustomEvent): void {
+    this.closeXAuthModal();
+    this.loadXAuthStatus();
+    console.log("X authenticated:", e.detail);
+  }
+
+  private async handleXLogout(): Promise<void> {
+    if (!confirm("Disconnect X account?")) return;
+
+    try {
+      await wsClient.authXLogout();
+      this.xAuthStatus = null;
+      await this.loadXAuthStatus();
+    } catch (err) {
+      console.error("Failed to logout:", err);
+    }
+  }
+
   private handlePlatformChange(e: Event): void {
     this.newAccountPlatform = (e.target as HTMLSelectElement).value as Platform;
   }
@@ -293,7 +440,7 @@ export class AccountsPageElement extends LitElement {
       accountName: this.newAccountName.startsWith("@")
         ? this.newAccountName
         : `@${this.newAccountName}`,
-      displayName: "新しいアカウント",
+      displayName: "New account",
       status: "active",
       contentCount: 0,
     };
@@ -306,69 +453,34 @@ export class AccountsPageElement extends LitElement {
     return html`
       <div class="page-header">
         <span class="page-title">Accounts</span>
-        <button class="btn btn-primary" @click="${this.openModal}">
-          + アカウント追加
-        </button>
       </div>
 
-      <div class="account-grid">
-        ${this.accounts.map(
-          (account) => html`
-            <div class="account-card">
-              <div class="card-header">
-                <div class="account-info">
-                  <indra-platform-badge
-                    .platform="${account.platform}"
-                  ></indra-platform-badge>
-                  <div class="account-name">${account.accountName}</div>
-                  <div class="display-name">${account.displayName ?? ""}</div>
-                </div>
-                <span class="status-badge status-${account.status}">
-                  ${STATUS_LABELS[account.status]}
-                </span>
-              </div>
+      ${this.renderXConnectSection()}
 
-              <div class="card-stats">
-                <span>投稿数: ${account.contentCount}件</span>
-                <span>最終投稿: ${this.formatDate(account.lastPostedAt)}</span>
+      <div class="section">
+        <div class="section-title">Connected Accounts</div>
+        ${this.accounts.length > 0
+          ? html`
+              <div class="account-grid">
+                ${this.accounts.map((account) =>
+                  this.renderAccountCard(account),
+                )}
               </div>
-
-              <div class="card-actions">
-                ${account.status !== "active"
-                  ? html`
-                      <button
-                        class="btn btn-secondary btn-sm"
-                        @click="${() => this.handleReauth(account.id)}"
-                      >
-                        再認証
-                      </button>
-                    `
-                  : null}
-                <button
-                  class="btn btn-secondary btn-sm"
-                  @click="${() => this.handleSettings(account.id)}"
-                >
-                  設定
-                </button>
-                <button
-                  class="btn btn-danger btn-sm"
-                  @click="${() => this.handleDelete(account.id)}"
-                >
-                  削除
-                </button>
+            `
+          : html`
+              <div style="color: var(--text-secondary); font-size: 14px;">
+                No accounts connected yet.
               </div>
-            </div>
-          `,
-        )}
+            `}
       </div>
 
       <indra-modal
         ?open="${this.isModalOpen}"
-        title="アカウント追加"
+        title="Add Account"
         @close="${this.closeModal}"
       >
         <div class="form-group">
-          <label>プラットフォーム</label>
+          <label>Platform</label>
           <select
             .value="${this.newAccountPlatform}"
             @change="${this.handlePlatformChange}"
@@ -378,11 +490,11 @@ export class AccountsPageElement extends LitElement {
             <option value="youtube">YouTube</option>
             <option value="instagram">Instagram</option>
             <option value="tiktok">TikTok</option>
-            <option value="other">その他</option>
+            <option value="other">Other</option>
           </select>
         </div>
         <div class="form-group">
-          <label>アカウント名</label>
+          <label>Account Name</label>
           <input
             type="text"
             placeholder="@username"
@@ -392,13 +504,155 @@ export class AccountsPageElement extends LitElement {
         </div>
         <div slot="footer" class="modal-actions">
           <button class="btn btn-secondary" @click="${this.closeModal}">
-            キャンセル
+            Cancel
           </button>
           <button class="btn btn-primary" @click="${this.handleAddAccount}">
-            追加
+            Add
           </button>
         </div>
       </indra-modal>
+
+      <indra-x-auth-modal
+        ?open="${this.isXAuthModalOpen}"
+        @close="${this.closeXAuthModal}"
+        @authenticated="${this.handleXAuthenticated}"
+      ></indra-x-auth-modal>
+    `;
+  }
+
+  private renderXConnectSection() {
+    const status = this.xAuthStatus;
+
+    return html`
+      <div class="section">
+        <div class="section-title">
+          <svg
+            viewBox="0 0 24 24"
+            style="width: 20px; height: 20px; fill: currentColor;"
+          >
+            ${xLogo}
+          </svg>
+          X (Twitter)
+        </div>
+        <div class="x-connect-card">
+          <div class="x-connect-info">
+            ${status?.authenticated
+              ? html`
+                  <div class="x-connect-title">
+                    <svg viewBox="0 0 24 24">${xLogo}</svg>
+                    @${status.username ?? "Connected"}
+                    <span class="auth-method-badge">OAuth 2.0</span>
+                  </div>
+                  <div class="x-connected-status">
+                    ${status.expired
+                      ? "Token expired - re-authenticate"
+                      : "Ready to post"}
+                  </div>
+                `
+              : html`
+                  <div class="x-connect-title">
+                    <svg viewBox="0 0 24 24">${xLogo}</svg>
+                    Connect X Account
+                  </div>
+                  <div class="x-connect-description">
+                    ${status?.oauth2Configured
+                      ? "Authorize indra to post on your behalf"
+                      : status?.oauth1Configured
+                        ? "Using OAuth 1.0a (environment variables)"
+                        : "OAuth not configured. Set X_CLIENT_ID to enable."}
+                  </div>
+                `}
+          </div>
+          ${this.renderXConnectButton(status)}
+        </div>
+      </div>
+    `;
+  }
+
+  private renderXConnectButton(status: XAuthStatus | null) {
+    if (status?.authenticated && !status.expired) {
+      return html`
+        <button class="btn btn-secondary" @click="${this.handleXLogout}">
+          Disconnect
+        </button>
+      `;
+    }
+
+    if (status?.oauth2Configured) {
+      return html`
+        <button class="btn btn-x" @click="${this.openXAuthModal}">
+          <span class="btn-icon">
+            <svg viewBox="0 0 24 24">${xLogo}</svg>
+          </span>
+          ${status.authenticated && status.expired
+            ? "Re-authenticate"
+            : "Connect"}
+        </button>
+      `;
+    }
+
+    if (status?.oauth1Configured) {
+      return html`
+        <span
+          class="auth-method-badge"
+          style="background: #2e7d32; color: white;"
+        >
+          OAuth 1.0a Active
+        </span>
+      `;
+    }
+
+    return html`
+      <button class="btn btn-secondary" disabled>Not Configured</button>
+    `;
+  }
+
+  private renderAccountCard(account: Account) {
+    return html`
+      <div class="account-card">
+        <div class="card-header">
+          <div class="account-info">
+            <indra-platform-badge
+              .platform="${account.platform}"
+            ></indra-platform-badge>
+            <div class="account-name">${account.accountName}</div>
+            <div class="display-name">${account.displayName ?? ""}</div>
+          </div>
+          <span class="status-badge status-${account.status}">
+            ${STATUS_LABELS[account.status]}
+          </span>
+        </div>
+
+        <div class="card-stats">
+          <span>Posts: ${account.contentCount}</span>
+          <span>Last post: ${this.formatDate(account.lastPostedAt)}</span>
+        </div>
+
+        <div class="card-actions">
+          ${account.status !== "active"
+            ? html`
+                <button
+                  class="btn btn-secondary btn-sm"
+                  @click="${() => this.handleReauth(account.id)}"
+                >
+                  Re-auth
+                </button>
+              `
+            : null}
+          <button
+            class="btn btn-secondary btn-sm"
+            @click="${() => this.handleSettings(account.id)}"
+          >
+            Settings
+          </button>
+          <button
+            class="btn btn-danger btn-sm"
+            @click="${() => this.handleDelete(account.id)}"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
     `;
   }
 }

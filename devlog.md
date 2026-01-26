@@ -443,3 +443,53 @@ Phase 3 コード品質改善
 
 - Agent SDKのツール機能活用（将来）
 - UI画面のリアルバックエンド連携
+
+---
+
+## 2026-01-27 05:47 [IMPL] Phase 3 X運用可能化（OAuth 2.0 PKCE + UI連携）
+
+### 実装内容
+
+- **Part A: Web UI ↔ Gateway 接続:**
+  - `ui/src/services/ws-client.ts` - ブラウザ用WebSocketクライアントサービス新規作成
+  - `ui/src/ui/types.ts` - `approvalItemToContent()` 型変換関数追加
+  - `ui/src/ui/approval-page.ts` - モックデータ削除、WSClient統合、リアルタイム更新対応
+  - `src/gateway/server.ts` - ブロードキャスト機能追加（post.created, post.updated イベント）
+- **Part B: OAuth 2.0 PKCE 認証:**
+  - `src/auth/x-oauth2.ts` - XOAuth2Handler新規作成（PKCE + Confidential Client対応）
+  - `src/auth/credential-store.ts` - トークン永続化（~/.indra/credentials/credentials.json）
+  - `src/auth/index.ts` - エクスポート
+  - `src/gateway/server.ts` - auth.x.start/callback/status/logout エンドポイント追加
+  - `src/connectors/x.ts` - OAuth2トークン優先使用、OAuth1.0aフォールバック対応
+  - `ui/src/ui/x-auth-modal.ts` - X認証モーダル新規作成
+  - `ui/public/callback.html` - OAuthコールバックページ新規作成
+  - `ui/src/ui/accounts-page.ts` - X認証統合、Connect/Disconnect機能
+- **環境設定:**
+  - `.env` - X_CLIENT_ID, X_CLIENT_SECRET 設定
+  - `package.json` - `--env-file=.env` オプション追加
+
+### 成功
+
+- X OAuth 2.0 PKCE認証フロー完全動作
+- ブラウザからX認証→トークン保存→投稿承認→X投稿の一連のフロー完成
+- リアルタイム更新（WebSocket broadcast）でCLI→UI間の同期動作
+- OAuth2/OAuth1.0aフォールバック機能実装
+
+### 失敗/課題
+
+- 最初dotenv未インストールで`.env`が読み込まれなかった → Node.js `--env-file` オプションで解決
+- ポート3001が既に使用中でGateway起動失敗 → `lsof -ti:3001 | xargs kill -9` で解決
+- 「Connect with X」ボタンが表示されなかった → `.env`読み込みがされていなかった
+- Token exchange失敗（unauthorized_client） → Confidential Client用にClient Secret + Basic Auth追加で解決
+
+### 学び
+
+- X OAuth 2.0には2種類ある: Public Client (PKCE only) / Confidential Client (Client Secret必須)
+- X Developer Portalで「Web App」を選択するとConfidential Clientになる
+- Node.js 20+の`--env-file`フラグで`.env`を読み込める（dotenv不要）
+- WebSocket broadcastで複数クライアント間のリアルタイム同期が実現可能
+- `window.opener.postMessage()` でOAuthポップアップ→親ウィンドウへのデータ受け渡し
+
+### 関連タスク
+
+Phase 3: X運用可能化（OAuth 2.0 PKCE + 承認フロー完成）

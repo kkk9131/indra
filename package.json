@@ -15,8 +15,8 @@
     "lint": "oxlint",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
-    "cli": "node dist/cli/entry.js",
-    "gateway": "node dist/gateway/entry.js"
+    "cli": "node --env-file=.env dist/cli/entry.js",
+    "gateway": "node --env-file=.env dist/gateway/entry.js"
   },
   "engines": {
     "node": ">=20.0.0"

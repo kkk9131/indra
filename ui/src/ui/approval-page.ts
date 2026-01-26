@@ -1,23 +1,19 @@
 import { LitElement, css, html, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import type { Content, ContentStatus, Platform } from "./types.js";
+import type { Content, Platform } from "./types.js";
+import { approvalItemToContent } from "./types.js";
+import { wsClient } from "../services/ws-client.js";
 import "./common/content-card.js";
 import "./common/modal.js";
 
 // Lucide icon - Check Circle
 const checkCircleIcon = svg`<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>`;
 
+// Loading spinner icon
+const loadingIcon = svg`<path d="M21 12a9 9 0 1 1-6.219-8.56"/>`;
+
 type FilterOption = Platform | "all";
 type SortOption = "date-desc" | "date-asc";
-
-const MOCK_ACCOUNTS: Record<string, string> = {
-  user_x_01: "@tech_kazuto",
-  user_x_02: "@tech_kazuto",
-  user_note_01: "@kazuto",
-  channel_yt_01: "@dev_kazuto",
-  user_ig_01: "@photo_kazuto",
-  user_tt_01: "@tiktok_kazuto",
-};
 
 @customElement("indra-approval-page")
 export class ApprovalPageElement extends LitElement {
@@ -97,6 +93,89 @@ export class ApprovalPageElement extends LitElement {
       font-size: 16px;
     }
 
+    .loading-state {
+      text-align: center;
+      padding: 60px 24px;
+      background: white;
+      border-radius: 12px;
+      color: var(--text-secondary, #636e72);
+    }
+
+    .loading-icon {
+      width: 32px;
+      height: 32px;
+      margin: 0 auto 16px;
+      animation: spin 1s linear infinite;
+    }
+
+    .loading-icon svg {
+      width: 100%;
+      height: 100%;
+      fill: none;
+      stroke: var(--primary, #2e7d32);
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    @keyframes spin {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .error-state {
+      text-align: center;
+      padding: 60px 24px;
+      background: #ffebee;
+      border-radius: 12px;
+      color: #c62828;
+    }
+
+    .error-state-text {
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+
+    .retry-btn {
+      padding: 8px 16px;
+      border: 1px solid #c62828;
+      border-radius: 8px;
+      background: transparent;
+      color: #c62828;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .retry-btn:hover {
+      background: #ffcdd2;
+    }
+
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-secondary, #636e72);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .status-dot.connected {
+      background: #2e7d32;
+    }
+
+    .status-dot.disconnected {
+      background: #c62828;
+    }
+
     .preview-content {
       padding: 16px 0;
     }
@@ -130,44 +209,16 @@ export class ApprovalPageElement extends LitElement {
   `;
 
   @state()
-  private contents: Content[] = [
-    {
-      id: "1",
-      platform: "x",
-      accountId: "user_x_01",
-      text: "AIは創造性を奪うのではなく、拡張する。人間の想像力とAIの処理能力が組み合わさることで、これまで不可能だったことが可能になる。",
-      status: "pending",
-      createdAt: Date.now() - 1000 * 60 * 30,
-      updatedAt: Date.now() - 1000 * 60 * 30,
-    },
-    {
-      id: "2",
-      platform: "x",
-      accountId: "user_x_02",
-      text: "週末イベントの告知です！AIとクリエイティビティをテーマにしたワークショップを開催します。",
-      status: "pending",
-      createdAt: Date.now() - 1000 * 60 * 60 * 2,
-      updatedAt: Date.now() - 1000 * 60 * 60 * 2,
-    },
-    {
-      id: "3",
-      platform: "note",
-      accountId: "user_note_01",
-      text: "AI時代の働き方について考える。これからのキャリア形成に必要なスキルとマインドセットとは何か。",
-      status: "pending",
-      createdAt: Date.now() - 1000 * 60 * 60 * 5,
-      updatedAt: Date.now() - 1000 * 60 * 60 * 5,
-    },
-    {
-      id: "4",
-      platform: "instagram",
-      accountId: "user_ig_01",
-      text: "オフィスの新しいコーヒーマシンが到着しました！ #office #coffee",
-      status: "pending",
-      createdAt: Date.now() - 1000 * 60 * 60 * 8,
-      updatedAt: Date.now() - 1000 * 60 * 60 * 8,
-    },
-  ];
+  private contents: Content[] = [];
+
+  @state()
+  private isLoading = true;
+
+  @state()
+  private error: string | null = null;
+
+  @state()
+  private isConnected = false;
 
   @state()
   private filterPlatform: FilterOption = "all";
@@ -177,6 +228,73 @@ export class ApprovalPageElement extends LitElement {
 
   @state()
   private previewContent: Content | null = null;
+
+  private handleConnected = () => {
+    this.isConnected = true;
+    this.loadContents();
+  };
+
+  private handleDisconnected = () => {
+    this.isConnected = false;
+  };
+
+  private handlePostCreated = (e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    if (detail?.item) {
+      const content = approvalItemToContent(detail.item);
+      this.contents = [content, ...this.contents];
+    }
+  };
+
+  private handlePostUpdated = (e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    if (detail?.item) {
+      const updatedContent = approvalItemToContent(detail.item);
+      this.contents = this.contents.map((c) =>
+        c.id === updatedContent.id ? updatedContent : c,
+      );
+    }
+  };
+
+  connectedCallback() {
+    super.connectedCallback();
+
+    wsClient.addEventListener("connected", this.handleConnected);
+    wsClient.addEventListener("disconnected", this.handleDisconnected);
+    wsClient.addEventListener("post.created", this.handlePostCreated);
+    wsClient.addEventListener("post.updated", this.handlePostUpdated);
+
+    // Connect if not already connected
+    if (!wsClient.isConnected) {
+      wsClient.connect();
+    } else {
+      this.isConnected = true;
+      this.loadContents();
+    }
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+
+    wsClient.removeEventListener("connected", this.handleConnected);
+    wsClient.removeEventListener("disconnected", this.handleDisconnected);
+    wsClient.removeEventListener("post.created", this.handlePostCreated);
+    wsClient.removeEventListener("post.updated", this.handlePostUpdated);
+  }
+
+  private async loadContents(): Promise<void> {
+    this.isLoading = true;
+    this.error = null;
+
+    try {
+      const items = await wsClient.postList();
+      this.contents = items.map(approvalItemToContent);
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : "Failed to load posts";
+    } finally {
+      this.isLoading = false;
+    }
+  }
 
   private get displayContents(): Content[] {
     const pending = this.contents.filter((c) => c.status === "pending");
@@ -200,19 +318,19 @@ export class ApprovalPageElement extends LitElement {
     this.sortOrder = (e.target as HTMLSelectElement).value as SortOption;
   }
 
-  private handleAction(e: CustomEvent): void {
+  private async handleAction(e: CustomEvent): Promise<void> {
     const { action, content } = e.detail as {
       action: string;
       content: Content;
     };
 
-    const statusActions: Record<string, ContentStatus> = {
-      approve: "approved",
-      reject: "rejected",
-    };
+    if (action === "approve") {
+      await this.approveContent(content.id);
+      return;
+    }
 
-    if (action in statusActions) {
-      this.updateStatus(content.id, statusActions[action]);
+    if (action === "reject") {
+      await this.rejectContent(content.id);
       return;
     }
 
@@ -221,18 +339,41 @@ export class ApprovalPageElement extends LitElement {
     }
   }
 
-  private updateStatus(id: string, newStatus: ContentStatus): void {
-    this.contents = this.contents.map((c) =>
-      c.id === id ? { ...c, status: newStatus, updatedAt: Date.now() } : c,
-    );
+  private async approveContent(id: string): Promise<void> {
+    try {
+      const item = await wsClient.postApprove(id);
+      const updatedContent = approvalItemToContent(item);
+      this.contents = this.contents.map((c) =>
+        c.id === id ? updatedContent : c,
+      );
+    } catch (err) {
+      console.error("Failed to approve:", err);
+      // Show error to user (could use a toast notification)
+    }
+  }
+
+  private async rejectContent(id: string): Promise<void> {
+    try {
+      const item = await wsClient.postReject(id);
+      const updatedContent = approvalItemToContent(item);
+      this.contents = this.contents.map((c) =>
+        c.id === id ? updatedContent : c,
+      );
+    } catch (err) {
+      console.error("Failed to reject:", err);
+    }
   }
 
   private closeModal(): void {
     this.previewContent = null;
   }
 
-  private getAccountName(accountId: string): string {
-    return MOCK_ACCOUNTS[accountId] ?? accountId;
+  private handleRetry(): void {
+    if (!wsClient.isConnected) {
+      wsClient.connect();
+    } else {
+      this.loadContents();
+    }
   }
 
   render() {
@@ -240,6 +381,15 @@ export class ApprovalPageElement extends LitElement {
       <div class="page-header">
         <span class="page-title">Approval</span>
         <div class="controls">
+          <div class="connection-status">
+            <span
+              class="status-dot ${this.isConnected
+                ? "connected"
+                : "disconnected"}"
+            ></span>
+            ${this.isConnected ? "Connected" : "Disconnected"}
+          </div>
+
           <select
             .value="${this.filterPlatform}"
             @change="${this.handleFilterChange}"
@@ -260,26 +410,7 @@ export class ApprovalPageElement extends LitElement {
         </div>
       </div>
 
-      <div class="content-list">
-        ${this.displayContents.length > 0
-          ? this.displayContents.map(
-              (content) => html`
-                <indra-content-card
-                  .content="${content}"
-                  .accountName="${this.getAccountName(content.accountId)}"
-                  @action="${this.handleAction}"
-                ></indra-content-card>
-              `,
-            )
-          : html`
-              <div class="empty-state">
-                <div class="empty-state-icon">
-                  <svg viewBox="0 0 24 24">${checkCircleIcon}</svg>
-                </div>
-                <div class="empty-state-text">No pending contents</div>
-              </div>
-            `}
-      </div>
+      <div class="content-list">${this.renderContentList()}</div>
 
       <indra-modal
         ?open="${this.previewContent !== null}"
@@ -291,10 +422,7 @@ export class ApprovalPageElement extends LitElement {
               <div class="preview-content">
                 <div class="preview-meta">
                   <span>Platform: ${this.previewContent.platform}</span>
-                  <span>
-                    Account:
-                    ${this.getAccountName(this.previewContent.accountId)}
-                  </span>
+                  <span> Status: ${this.previewContent.status} </span>
                 </div>
                 <div class="preview-text">${this.previewContent.text}</div>
               </div>
@@ -305,6 +433,49 @@ export class ApprovalPageElement extends LitElement {
         </div>
       </indra-modal>
     `;
+  }
+
+  private renderContentList() {
+    if (this.isLoading) {
+      return html`
+        <div class="loading-state">
+          <div class="loading-icon">
+            <svg viewBox="0 0 24 24">${loadingIcon}</svg>
+          </div>
+          <div>Loading posts...</div>
+        </div>
+      `;
+    }
+
+    if (this.error) {
+      return html`
+        <div class="error-state">
+          <div class="error-state-text">${this.error}</div>
+          <button class="retry-btn" @click="${this.handleRetry}">Retry</button>
+        </div>
+      `;
+    }
+
+    if (this.displayContents.length === 0) {
+      return html`
+        <div class="empty-state">
+          <div class="empty-state-icon">
+            <svg viewBox="0 0 24 24">${checkCircleIcon}</svg>
+          </div>
+          <div class="empty-state-text">No pending contents</div>
+        </div>
+      `;
+    }
+
+    return this.displayContents.map(
+      (content) => html`
+        <indra-content-card
+          .content="${content}"
+          .accountName="${content.accountId}"
+          @action="${this.handleAction}"
+        ></indra-content-card>
+      `,
+    );
   }
 }
 

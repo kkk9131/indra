@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Authentication Callback - indra</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Geist Mono", "Inter", system-ui, monospace;
+        background: #e8f5e9;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .container {
+        text-align: center;
+        padding: 40px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        max-width: 400px;
+        width: 90%;
+      }
+
+      .spinner {
+        width: 48px;
+        height: 48px;
+        border: 3px solid #e0e0e0;
+        border-top-color: #2e7d32;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 24px;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      h1 {
+        font-size: 18px;
+        font-weight: 600;
+        color: #2d3436;
+        margin-bottom: 12px;
+      }
+
+      p {
+        font-size: 14px;
+        color: #636e72;
+        line-height: 1.6;
+      }
+
+      .success {
+        color: #2e7d32;
+      }
+
+      .error {
+        color: #c62828;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="spinner" id="spinner"></div>
+      <h1 id="title">Processing...</h1>
+      <p id="message">Please wait while we complete the authentication.</p>
+    </div>
+
+    <script>
+      (function () {
+        const spinner = document.getElementById("spinner");
+        const title = document.getElementById("title");
+        const message = document.getElementById("message");
+
+        // Parse URL parameters
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get("code");
+        const state = params.get("state");
+        const error = params.get("error");
+        const errorDescription = params.get("error_description");
+
+        function sendToParent(data) {
+          if (window.opener) {
+            window.opener.postMessage(data, window.location.origin);
+          }
+        }
+
+        function showSuccess() {
+          spinner.style.display = "none";
+          title.textContent = "Authentication Complete";
+          title.classList.add("success");
+          message.textContent =
+            "You can close this window. Redirecting back...";
+        }
+
+        function showError(errorMsg) {
+          spinner.style.display = "none";
+          title.textContent = "Authentication Failed";
+          title.classList.add("error");
+          message.textContent = errorMsg || "An unknown error occurred.";
+        }
+
+        // Handle the callback
+        if (error) {
+          showError(errorDescription || error);
+          sendToParent({
+            type: "x-auth-callback",
+            error: errorDescription || error,
+          });
+        } else if (code && state) {
+          showSuccess();
+          sendToParent({
+            type: "x-auth-callback",
+            code: code,
+            state: state,
+          });
+
+          // Close window after short delay
+          setTimeout(function () {
+            window.close();
+          }, 1500);
+        } else {
+          showError("Missing authentication parameters.");
+          sendToParent({
+            type: "x-auth-callback",
+            error: "Missing authentication parameters",
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>

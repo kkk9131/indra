@@ -1,4 +1,5 @@
 // Phase 3 UI Types
+import type { ApprovalItem } from "../services/ws-client.js";
 
 export type Platform =
   | "x"
@@ -24,6 +25,36 @@ export interface Content {
   createdAt: number;
   updatedAt: number;
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * Convert backend ApprovalItem to UI Content
+ */
+export function approvalItemToContent(item: ApprovalItem): Content {
+  return {
+    id: item.id,
+    platform: item.platform as Platform,
+    accountId: "default", // Backend doesn't track accountId yet
+    text: item.content.text,
+    status: item.status as ContentStatus,
+    createdAt: new Date(item.createdAt).getTime(),
+    updatedAt: new Date(item.updatedAt).getTime(),
+    metadata: {
+      prompt: item.prompt,
+      postId: item.postId,
+      postUrl: item.postUrl,
+      error: item.error,
+    },
+  };
+}
+
+/**
+ * Convert UI Content to backend Content format
+ */
+export function contentToApprovalContent(content: Content): { text: string } {
+  return {
+    text: content.text,
+  };
 }
 
 export interface Account {
