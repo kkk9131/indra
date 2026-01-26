@@ -2,3 +2,6 @@ packages:
   - .
   - ui
   - extensions/*
+ignoredBuiltDependencies:
+  - better-sqlite3
+  - esbuild

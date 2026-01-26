@@ -48,3 +48,4 @@ pnpm lint             # リント
 - 要件定義: `.claude/agent-docs/01-requirements.md`
 - アーキテクチャ: `.claude/agent-docs/02-architecture.md`
 - フェーズ計画: `.claude/agent-docs/04-phases.md`
+- UIデザイン: `.claude/agent-docs/06-ui-design.md`

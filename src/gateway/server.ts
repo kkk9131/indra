@@ -9,6 +9,7 @@ import {
   OpenAIProvider,
   GoogleProvider,
   OllamaProvider,
+  GLMProvider,
   type LLMProvider,
   type Message,
 } from "../llm/index.js";
@@ -18,6 +19,31 @@ import {
   createEvent,
   type RequestFrame,
 } from "./protocol/index.js";
+import { ApprovalQueue, type ApprovalStatus } from "../approval/index.js";
+import {
+  XConnector,
+  type Platform,
+  type Content,
+} from "../connectors/index.js";
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+function sendError(
+  ws: WebSocket,
+  id: string,
+  code: string,
+  message: string,
+): void {
+  ws.send(
+    JSON.stringify(createResponse(id, false, undefined, { code, message })),
+  );
+}
+
+function sendSuccess(ws: WebSocket, id: string, payload?: unknown): void {
+  ws.send(JSON.stringify(createResponse(id, true, payload)));
+}
 
 export class GatewayServer {
   private app: Hono;
@@ -25,6 +51,8 @@ export class GatewayServer {
   private wss: WebSocketServer;
   private sessionManager: SessionManager;
   private configManager: ConfigManager;
+  private approvalQueue: ApprovalQueue;
+  private xConnector: XConnector | null = null;
   private port: number;
 
   constructor(port = 3001) {
@@ -34,9 +62,27 @@ export class GatewayServer {
     this.wss = new WebSocketServer({ server: this.httpServer });
     this.sessionManager = new SessionManager();
     this.configManager = new ConfigManager();
+    this.approvalQueue = new ApprovalQueue();
 
     this.setupRoutes();
     this.setupWebSocket();
+    this.initConnectors();
+  }
+
+  private initConnectors(): void {
+    const apiKey = process.env.X_API_KEY;
+    const apiSecret = process.env.X_API_SECRET;
+    const accessToken = process.env.X_ACCESS_TOKEN;
+    const accessSecret = process.env.X_ACCESS_SECRET;
+
+    if (apiKey && apiSecret && accessToken && accessSecret) {
+      this.xConnector = new XConnector({
+        apiKey,
+        apiSecret,
+        accessToken,
+        accessSecret,
+      });
+    }
   }
 
   private createLLMProvider(config: Config["llm"]): LLMProvider {
@@ -57,6 +103,8 @@ export class GatewayServer {
         return new GoogleProvider(providerConfig);
       case "ollama":
         return new OllamaProvider(providerConfig);
+      case "glm":
+        return new GLMProvider(providerConfig);
     }
   }
 
@@ -168,6 +216,26 @@ export class GatewayServer {
         await this.handleLLMTest(ws, frame);
         break;
 
+      case "post.create":
+        await this.handlePostCreate(ws, frame);
+        break;
+
+      case "post.list":
+        this.handlePostList(ws, frame);
+        break;
+
+      case "post.approve":
+        await this.handlePostApprove(ws, frame);
+        break;
+
+      case "post.reject":
+        this.handlePostReject(ws, frame);
+        break;
+
+      case "post.edit":
+        this.handlePostEdit(ws, frame);
+        break;
+
       default:
         ws.send(
           JSON.stringify(
@@ -194,9 +262,14 @@ export class GatewayServer {
     ws: WebSocket,
     frame: RequestFrame,
   ): Promise<void> {
+    console.log(
+      "[Gateway] handleChatSend called:",
+      JSON.stringify(frame.params),
+    );
     try {
       const params = frame.params as { message: string; history?: Message[] };
       const config = this.configManager.get();
+      console.log("[Gateway] LLM config:", JSON.stringify(config.llm));
       const provider = this.createLLMProvider(config.llm);
 
       const messages: Message[] = [
@@ -216,6 +289,7 @@ export class GatewayServer {
       ws.send(JSON.stringify(createEvent("chat.done", {})));
       ws.send(JSON.stringify(createResponse(frame.id, true)));
     } catch (error) {
+      console.error("LLM Error:", error);
       ws.send(
         JSON.stringify(
           createResponse(frame.id, false, undefined, {
@@ -259,6 +333,124 @@ export class GatewayServer {
         ),
       );
     }
+  }
+
+  private async handlePostCreate(
+    ws: WebSocket,
+    frame: RequestFrame,
+  ): Promise<void> {
+    try {
+      const { platform, prompt } = frame.params as {
+        platform: Platform;
+        prompt: string;
+      };
+      const config = this.configManager.get();
+      const provider = this.createLLMProvider(config.llm);
+
+      const systemPrompt = `You are a social media content creator. Generate a concise, engaging post for ${platform}.
+Keep it under 280 characters. Be creative and natural. Output ONLY the post text, no explanations.`;
+
+      const generatedText = await provider.chat(
+        [{ role: "user", content: prompt }],
+        { systemPrompt },
+      );
+      const item = this.approvalQueue.create({
+        platform,
+        content: { text: generatedText.slice(0, 280) },
+        prompt,
+      });
+
+      sendSuccess(ws, frame.id, { item });
+    } catch (error) {
+      sendError(ws, frame.id, "POST_CREATE_ERROR", getErrorMessage(error));
+    }
+  }
+
+  private handlePostList(ws: WebSocket, frame: RequestFrame): void {
+    const params = frame.params as { status?: ApprovalStatus } | undefined;
+    sendSuccess(ws, frame.id, {
+      items: this.approvalQueue.list(params?.status),
+    });
+  }
+
+  private async handlePostApprove(
+    ws: WebSocket,
+    frame: RequestFrame,
+  ): Promise<void> {
+    const { id } = frame.params as { id: string };
+
+    const item = this.approvalQueue.approve(id);
+    if (!item) {
+      sendError(ws, frame.id, "NOT_FOUND", `Item not found: ${id}`);
+      return;
+    }
+
+    if (item.platform !== "x") {
+      sendError(
+        ws,
+        frame.id,
+        "UNSUPPORTED_PLATFORM",
+        `Platform not yet supported: ${item.platform}`,
+      );
+      return;
+    }
+
+    if (!this.xConnector) {
+      this.approvalQueue.markFailed(id, "X connector not configured");
+      sendError(
+        ws,
+        frame.id,
+        "CONNECTOR_NOT_CONFIGURED",
+        "X connector not configured. Set X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET.",
+      );
+      return;
+    }
+
+    try {
+      await this.xConnector.connect();
+      const result = await this.xConnector.post(item.content);
+
+      if (result.success && result.postId && result.url) {
+        sendSuccess(ws, frame.id, {
+          item: this.approvalQueue.markPosted(id, result.postId, result.url),
+        });
+      } else {
+        this.approvalQueue.markFailed(id, result.error ?? "Unknown error");
+        sendError(
+          ws,
+          frame.id,
+          "POST_FAILED",
+          result.error ?? "Failed to post",
+        );
+      }
+    } catch (error) {
+      this.approvalQueue.markFailed(id, getErrorMessage(error));
+      sendError(ws, frame.id, "POST_ERROR", getErrorMessage(error));
+    }
+  }
+
+  private handlePostReject(ws: WebSocket, frame: RequestFrame): void {
+    const { id } = frame.params as { id: string };
+    const item = this.approvalQueue.reject(id);
+
+    if (!item) {
+      sendError(ws, frame.id, "NOT_FOUND", `Item not found: ${id}`);
+      return;
+    }
+
+    sendSuccess(ws, frame.id, { item });
+  }
+
+  private handlePostEdit(ws: WebSocket, frame: RequestFrame): void {
+    const { id, content } = frame.params as { id: string; content: Content };
+    const item = this.approvalQueue.update(id, { content });
+
+    if (!item) {
+      sendError(ws, frame.id, "NOT_FOUND", `Item not found: ${id}`);
+      return;
+    }
+
+    sendSuccess(ws, frame.id, { item });
   }
 
   stop(): void {

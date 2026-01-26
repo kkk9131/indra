@@ -7,6 +7,10 @@ import "./status-bar.js";
 import "./home-page.js";
 import "./settings-page.js";
 import "./chat-ui.js";
+import "./approval-page.js";
+import "./contents-page.js";
+import "./accounts-page.js";
+import "./schedule-page.js";
 
 @customElement("indra-app-shell")
 export class AppShellElement extends LitElement {
@@ -37,6 +41,42 @@ export class AppShellElement extends LitElement {
       background: var(--bg-primary, #e8f5e9);
       overflow-y: auto;
     }
+
+    .chat-fab {
+      position: fixed;
+      bottom: 80px;
+      right: 24px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--primary, #2e7d32);
+      color: white;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transition:
+        transform 0.2s,
+        box-shadow 0.2s;
+      z-index: 999;
+    }
+
+    .chat-fab:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    }
+
+    .chat-fab svg {
+      width: 24px;
+      height: 24px;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
   `;
 
   @property({ type: Boolean })
@@ -47,6 +87,9 @@ export class AppShellElement extends LitElement {
 
   @state()
   private currentPage = "home";
+
+  @state()
+  private chatOpen = false;
 
   @property({ type: Array })
   pendingItems: PendingItem[] = [
@@ -104,6 +147,14 @@ export class AppShellElement extends LitElement {
             .scheduleItems="${this.scheduleItems}"
           ></indra-home-page>
         `;
+      case "approval":
+        return html`<indra-approval-page></indra-approval-page>`;
+      case "contents":
+        return html`<indra-contents-page></indra-contents-page>`;
+      case "schedule":
+        return html`<indra-schedule-page></indra-schedule-page>`;
+      case "accounts":
+        return html`<indra-accounts-page></indra-accounts-page>`;
       case "settings":
         return html`<indra-settings-page></indra-settings-page>`;
       default:
@@ -111,6 +162,10 @@ export class AppShellElement extends LitElement {
           Coming soon...
         </div>`;
     }
+  }
+
+  private toggleChat(): void {
+    this.chatOpen = !this.chatOpen;
   }
 
   render() {
@@ -127,6 +182,19 @@ export class AppShellElement extends LitElement {
         .llm="${this.llm}"
         .pendingCount="${this.pendingItems.length}"
       ></indra-status-bar>
+
+      <button class="chat-fab" @click="${this.toggleChat}" title="Open Chat">
+        <svg viewBox="0 0 24 24">
+          <path
+            d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+          />
+        </svg>
+      </button>
+
+      <indra-chat-ui
+        ?open="${this.chatOpen}"
+        @close="${() => (this.chatOpen = false)}"
+      ></indra-chat-ui>
     `;
   }
 }

@@ -173,3 +173,216 @@
 - 実際のLLM API接続テスト
 - チャットUIでストリーミング表示確認
 - 残り画面（Approval, Schedule, History, Account）実装
+
+---
+
+## 2026-01-26 04:44 [IMPL] Phase 2 CLI/Web UI ストリーミング対応を完了
+
+### 実装内容
+
+- **並列実装スキル（/parallel-impl）使用:**
+  - GLM: `src/cli/ws-client.ts` - WebSocketクライアント（接続管理、chat.send、再接続）
+  - Codex: `src/cli/stream-renderer.ts` - ストリーミング表示（スピナー、リアルタイム出力）
+  - Claude: `src/commands/chat.ts` - CLI Chat UI統合（履歴管理、/clear、/history）
+- **Web UI ストリーミング対応:**
+  - `ui/src/ui/chat-ui.ts` - chat.chunk/chat.done イベント処理、カーソルブリンク
+  - `ui/src/ui/app-shell.ts` - フローティングチャットボタン（FAB）追加
+- **チャットパネルUI改善:**
+  - ヘッダー削除（シンプル化）
+  - ×ボタンでcloseイベント発火（親への通知）
+
+### 成功
+
+- P2-2-2（CLI ストリーミング）完了
+- P2-2-3（Web UI ストリーミング）完了
+- Phase 2 完了率: 100%（P2-1-4 Copilot以外）
+- GLM + Codex + Claude の3エージェント並列実装が機能
+- テスト12件パス
+
+### 失敗/課題
+
+- ×ボタンが最初動作しなかった: `this.open = false` ではなくイベント発火が必要
+- Web UIのストリーミング対応を忘れていた → ユーザー指摘で追加実装
+
+### 学び
+
+- Litコンポーネントで親に状態変更を通知するには `dispatchEvent(new CustomEvent())` を使う
+- `/parallel-impl` スキルで複数LLMにタスク分散可能
+- AsyncIterableとキューを組み合わせてストリーミング受信を実装
+- `?open="${this.chatOpen}"` でboolean属性をLitにバインド
+
+### 関連タスク
+
+P2-2-2, P2-2-3
+
+---
+
+## 2026-01-26 06:21 [IMPL] GLMプロバイダー追加とUI改善
+
+### 実装内容
+
+- **GLMプロバイダー新規作成:**
+  - `src/llm/glm.ts` - Z.ai (GLM-4.7) OpenAI互換SDK実装
+  - `src/llm/types.ts` - ProviderId に "glm" 追加
+  - `src/gateway/server.ts` - GLMProvider インポート・生成追加
+  - `src/commands/config.ts` - CLI設定にGLM追加
+  - `ui/src/ui/settings-page.ts` - UI設定にGLM追加
+- **ゲートウェイ起動修正:**
+  - `src/gateway/entry.ts` - エントリーポイント新規作成
+  - `package.json` - gateway スクリプト修正
+- **UIバグ修正:**
+  - `ui/src/ui/settings-page.ts` - `frame.data` → `frame.payload` 修正
+  - `ui/src/ui/chat-ui.ts` - 重複 `handleClose` メソッド名を分離
+- **チャットUI改善:**
+  - アバター: 丸い背景削除、Lucide SVGアイコン（user/bot）に統一
+  - ユーザーメッセージ: 薄い緑（#81c784）に変更
+
+### 成功
+
+- GLM-4.7-flash（無料モデル）での動作確認完了
+- 5プロバイダー（Anthropic/OpenAI/Google/Ollama/GLM）対応
+- UIからLLM設定変更・保存・接続テスト可能
+- チャットUIがサイドバーとアイコン統一
+
+### 失敗/課題
+
+- 最初のGLM実装でエンドポイントURL間違い（`open.bigmodel.cn` → `api.z.ai`）
+- モデル名間違い（`glm-4-flash` → `glm-4.7-flash`）
+- JWT認証実装は不要だった（単純なBearer Token認証で動作）
+- better-sqlite3のネイティブモジュールリビルドが必要だった
+
+### 学び
+
+- Z.ai API正しいURL: `https://api.z.ai/api/paas/v4`
+- GLM無料モデル: `glm-4.7-flash`（有料: `glm-4.7`, `glm-4.7-flashx`）
+- pnpm workspace でネイティブモジュールは `pnpm.onlyBuiltDependencies` で許可が必要
+- WebSocketレスポンスのプロパティ名（`data` vs `payload`）は統一が重要
+
+### 次のステップ
+
+- ゲートウェイのデーモン化（launchd plist 作成）
+- 残り画面（Approval, Schedule, History, Account）実装
+- エラーメッセージのUI表示改善
+
+---
+
+## 2026-01-26 15:08 [IMPL] Phase 3 UI実装（SNS連携・承認フロー）
+
+### 実装内容
+
+- **共通コンポーネント新規作成:**
+  - `ui/src/ui/types.ts` - Phase 3 型定義（Platform, Content, Account, ApiToken）
+  - `ui/src/ui/common/modal.ts` - 汎用モーダルコンポーネント
+  - `ui/src/ui/common/platform-badge.ts` - プラットフォームバッジ（X/note/YouTube等）
+  - `ui/src/ui/common/content-card.ts` - コンテンツカード（承認/却下アクション付き）
+  - `ui/src/ui/common/index.ts` - 共通コンポーネントexport
+- **並列実装（GLM + Opencode）:**
+  - GLM: `approval-page.ts` - 承認キュー画面（フィルタ、ソート、プレビューモーダル）
+  - GLM: `accounts-page.ts` - アカウント管理画面（追加モーダル、再認証、削除）
+  - Opencode: `contents-page.ts` - コンテンツ履歴画面（テーブル、ステータスタブ、検索）
+  - GLM: `schedule-page.ts` - スケジュール管理画面（Today/Week/Month、編集モーダル）
+- **ナビゲーション更新:**
+  - `sidebar-nav.ts` - Contents, Schedule, Accounts追加、アイコン追加
+  - `app-shell.ts` - 4画面のルーティング追加
+
+### 成功
+
+- Phase 3 UI 5画面すべて実装完了
+- GLM + Opencode 並列実装が機能（/parallel-impl スキル使用）
+- モックデータ付きで動作確認可能な状態
+- 全画面でスタイル（緑テーマ、Geist Mono）統一
+- プラットフォームバッジ6種類対応（X, note, YouTube, Instagram, TikTok, Other）
+
+### 失敗/課題
+
+- Opencodeのcontents-page.ts出力が不完全 → Claudeで補完
+- GLM生成コードのコンポーネント名修正が必要（`platform-badge` → `indra-platform-badge`）
+- Settings APIタブは未実装（計画から除外）
+
+### 学び
+
+- GLM (glm-4.7) でUI生成は高品質、ただしインポートパス・コンポーネント名の修正が必要
+- 並列実装スキルで複数タスクを同時処理可能（レート制限に注意: 5件/batch推奨）
+- Litコンポーネントの `@action` イベントで子→親へのアクション通知が簡潔
+- `indra-modal` の `slot="footer"` でカスタムフッターボタンを配置可能
+
+### 関連タスク
+
+Phase 3: Approval, Contents, Accounts, Schedule 画面実装
+
+---
+
+## 2026-01-26 15:19 [REFACTOR] Phase 3 UIコード整理
+
+### 実装内容
+
+- **共通スタイルモジュール新規作成:**
+  - `ui/src/ui/common/styles.ts` - STATUS_CONFIG、共通CSSスタイルを統合
+- **code-simplifierによるリファクタリング:**
+  - 7ファイルのコード整理（approval, contents, accounts, schedule, modal, platform-badge, content-card）
+  - 重複コード削除（STATUS_CONFIG統合）
+  - 型エイリアス追加（PlatformConfig, ModalSize, StatusFilter, AccountStatus等）
+  - 命名規則統一、CSS変数一貫使用
+
+### 成功
+
+- 重複していた`STATUS_CONFIG`を`styles.ts`に統合
+- `""` → `null`、`||` → `??`（nullish coalescing）に統一
+- インラインスタイル削除、CSSクラス化
+- ヘルパーメソッド抽出（`getStartOfToday`, `capitalizeFirst`等）
+- ビルド・lintエラーなし
+
+### 学び
+
+- 共通定数は早めに共通モジュールに抽出すべき
+- 空値処理は`null`とnullish coalescingで統一すると一貫性が保てる
+- code-simplifierで自動リファクタリング可能だが、生成コードの品質向上に有効
+
+### 関連タスク
+
+Phase 3 コード品質改善
+
+---
+
+## 2026-01-26 16:17 [IMPL] Phase 3 バックエンド実装（SNS連携・承認キュー）
+
+### 実装内容
+
+- **SNS Connector基盤:**
+  - `src/connectors/types.ts` - SNSConnector interface、Platform/Content/PostResult型
+  - `src/connectors/x.ts` - XConnector（twitter-api-v2）
+- **承認キュー:**
+  - `src/approval/types.ts` - ApprovalItem/ApprovalStatus型定義
+  - `src/approval/queue.ts` - ファイルベース永続化（~/.indra/approval/）
+- **Gateway拡張:**
+  - post.create/list/approve/reject/edit メソッド追加
+  - LLMによる投稿コンテンツ生成
+- **CLI postコマンド:**
+  - `src/commands/post.ts` - create/list/approve/reject サブコマンド
+  - `src/cli/ws-client.ts` - post関連メソッド追加
+
+### 成功
+
+- X API Free Tier（17投稿/日）での投稿実装完了
+- ファイルベース承認キュー（pending/approved/history）実装
+- CLI `indra post create -p x --prompt "..."` で投稿生成・承認フロー動作
+- テスト12件パス、ビルドエラーなし
+
+### リファクタリング
+
+- `commands/post.ts` - `withGateway`ヘルパーで共通パターン抽出（-18%削減）
+- `approval/queue.ts` - 定数・型エイリアス抽出、プロパティ統合（-18%削減）
+- `gateway/server.ts` - `sendError`/`sendSuccess`ヘルパー追加（-10%削減）
+
+### 学び
+
+- twitter-api-v2はpnpm workspaceでは `-w` フラグが必要
+- ResponseFrameのプロパティは `data` ではなく `payload`
+- ファイルベースキューはステータス変更時にファイル移動で実装
+- 共通パターンは早めにヘルパー関数に抽出すべき
+
+### 次のステップ
+
+- X API認証設定（環境変数）
+- UIバックエンド連携（モック → リアルデータ）
+- note Connector実装
