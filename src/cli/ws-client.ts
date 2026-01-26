@@ -5,6 +5,8 @@ import {
   type EventFrame,
 } from "../gateway/protocol/frame.js";
 import type { Message } from "../llm/types.js";
+import type { ApprovalItem, ApprovalStatus } from "../approval/types.js";
+import type { Platform, Content } from "../connectors/types.js";
 
 export interface WSClientOptions {
   url?: string;
@@ -246,5 +248,45 @@ export class WSClient {
       this.off("chat.done", doneHandler);
       this.off("chat.chunk", chunkHandler);
     }
+  }
+
+  async postCreate(platform: Platform, prompt: string): Promise<ApprovalItem> {
+    const res = await this.sendRequest("post.create", { platform, prompt });
+    if (!res.ok) {
+      throw new Error(res.error?.message || "Failed to create post");
+    }
+    return (res.payload as { item: ApprovalItem }).item;
+  }
+
+  async postList(status?: ApprovalStatus): Promise<ApprovalItem[]> {
+    const res = await this.sendRequest("post.list", status ? { status } : {});
+    if (!res.ok) {
+      throw new Error(res.error?.message || "Failed to list posts");
+    }
+    return (res.payload as { items: ApprovalItem[] }).items;
+  }
+
+  async postApprove(id: string): Promise<ApprovalItem> {
+    const res = await this.sendRequest("post.approve", { id });
+    if (!res.ok) {
+      throw new Error(res.error?.message || "Failed to approve post");
+    }
+    return (res.payload as { item: ApprovalItem }).item;
+  }
+
+  async postReject(id: string): Promise<ApprovalItem> {
+    const res = await this.sendRequest("post.reject", { id });
+    if (!res.ok) {
+      throw new Error(res.error?.message || "Failed to reject post");
+    }
+    return (res.payload as { item: ApprovalItem }).item;
+  }
+
+  async postEdit(id: string, content: Content): Promise<ApprovalItem> {
+    const res = await this.sendRequest("post.edit", { id, content });
+    if (!res.ok) {
+      throw new Error(res.error?.message || "Failed to edit post");
+    }
+    return (res.payload as { item: ApprovalItem }).item;
   }
 }

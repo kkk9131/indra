@@ -341,3 +341,48 @@ Phase 3: Approval, Contents, Accounts, Schedule 画面実装
 ### 関連タスク
 
 Phase 3 コード品質改善
+
+---
+
+## 2026-01-26 16:17 [IMPL] Phase 3 バックエンド実装（SNS連携・承認キュー）
+
+### 実装内容
+
+- **SNS Connector基盤:**
+  - `src/connectors/types.ts` - SNSConnector interface、Platform/Content/PostResult型
+  - `src/connectors/x.ts` - XConnector（twitter-api-v2）
+- **承認キュー:**
+  - `src/approval/types.ts` - ApprovalItem/ApprovalStatus型定義
+  - `src/approval/queue.ts` - ファイルベース永続化（~/.indra/approval/）
+- **Gateway拡張:**
+  - post.create/list/approve/reject/edit メソッド追加
+  - LLMによる投稿コンテンツ生成
+- **CLI postコマンド:**
+  - `src/commands/post.ts` - create/list/approve/reject サブコマンド
+  - `src/cli/ws-client.ts` - post関連メソッド追加
+
+### 成功
+
+- X API Free Tier（17投稿/日）での投稿実装完了
+- ファイルベース承認キュー（pending/approved/history）実装
+- CLI `indra post create -p x --prompt "..."` で投稿生成・承認フロー動作
+- テスト12件パス、ビルドエラーなし
+
+### リファクタリング
+
+- `commands/post.ts` - `withGateway`ヘルパーで共通パターン抽出（-18%削減）
+- `approval/queue.ts` - 定数・型エイリアス抽出、プロパティ統合（-18%削減）
+- `gateway/server.ts` - `sendError`/`sendSuccess`ヘルパー追加（-10%削減）
+
+### 学び
+
+- twitter-api-v2はpnpm workspaceでは `-w` フラグが必要
+- ResponseFrameのプロパティは `data` ではなく `payload`
+- ファイルベースキューはステータス変更時にファイル移動で実装
+- 共通パターンは早めにヘルパー関数に抽出すべき
+
+### 次のステップ
+
+- X API認証設定（環境変数）
+- UIバックエンド連携（モック → リアルデータ）
+- note Connector実装
