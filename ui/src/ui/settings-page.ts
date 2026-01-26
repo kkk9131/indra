@@ -2,7 +2,7 @@ import { LitElement, css, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
 
 type TabId = "general" | "llm" | "sns" | "cron";
-type ProviderId = "anthropic" | "openai" | "google" | "ollama";
+type ProviderId = "anthropic" | "openai" | "google" | "ollama" | "glm";
 type Language = "en" | "ja" | "zh";
 type Theme = "light" | "dark" | "auto";
 
@@ -39,6 +39,7 @@ const PROVIDERS: { value: ProviderId; label: string }[] = [
   { value: "openai", label: "OpenAI" },
   { value: "google", label: "Google Gemini" },
   { value: "ollama", label: "Ollama (Local)" },
+  { value: "glm", label: "GLM (Z.ai)" },
 ];
 
 const DEFAULT_MODELS: Record<ProviderId, string> = {
@@ -46,6 +47,7 @@ const DEFAULT_MODELS: Record<ProviderId, string> = {
   openai: "gpt-4o",
   google: "gemini-2.0-flash",
   ollama: "llama3.2",
+  glm: "glm-4.7-flash",
 };
 
 @customElement("indra-settings-page")
@@ -339,7 +341,7 @@ export class SettingsPageElement extends LitElement {
           if (pending) {
             this.pendingRequests.delete(frame.id);
             if (frame.ok) {
-              pending.resolve(frame.data);
+              pending.resolve(frame.payload);
             } else {
               pending.reject(
                 new Error(frame.error?.message ?? "Unknown error"),

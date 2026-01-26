@@ -9,6 +9,7 @@ import {
   OpenAIProvider,
   GoogleProvider,
   OllamaProvider,
+  GLMProvider,
   type LLMProvider,
   type Message,
 } from "../llm/index.js";
@@ -57,6 +58,8 @@ export class GatewayServer {
         return new GoogleProvider(providerConfig);
       case "ollama":
         return new OllamaProvider(providerConfig);
+      case "glm":
+        return new GLMProvider(providerConfig);
     }
   }
 
@@ -194,9 +197,14 @@ export class GatewayServer {
     ws: WebSocket,
     frame: RequestFrame,
   ): Promise<void> {
+    console.log(
+      "[Gateway] handleChatSend called:",
+      JSON.stringify(frame.params),
+    );
     try {
       const params = frame.params as { message: string; history?: Message[] };
       const config = this.configManager.get();
+      console.log("[Gateway] LLM config:", JSON.stringify(config.llm));
       const provider = this.createLLMProvider(config.llm);
 
       const messages: Message[] = [
@@ -216,6 +224,7 @@ export class GatewayServer {
       ws.send(JSON.stringify(createEvent("chat.done", {})));
       ws.send(JSON.stringify(createResponse(frame.id, true)));
     } catch (error) {
+      console.error("LLM Error:", error);
       ws.send(
         JSON.stringify(
           createResponse(frame.id, false, undefined, {

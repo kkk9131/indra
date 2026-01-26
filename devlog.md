@@ -214,3 +214,130 @@
 ### 関連タスク
 
 P2-2-2, P2-2-3
+
+---
+
+## 2026-01-26 06:21 [IMPL] GLMプロバイダー追加とUI改善
+
+### 実装内容
+
+- **GLMプロバイダー新規作成:**
+  - `src/llm/glm.ts` - Z.ai (GLM-4.7) OpenAI互換SDK実装
+  - `src/llm/types.ts` - ProviderId に "glm" 追加
+  - `src/gateway/server.ts` - GLMProvider インポート・生成追加
+  - `src/commands/config.ts` - CLI設定にGLM追加
+  - `ui/src/ui/settings-page.ts` - UI設定にGLM追加
+- **ゲートウェイ起動修正:**
+  - `src/gateway/entry.ts` - エントリーポイント新規作成
+  - `package.json` - gateway スクリプト修正
+- **UIバグ修正:**
+  - `ui/src/ui/settings-page.ts` - `frame.data` → `frame.payload` 修正
+  - `ui/src/ui/chat-ui.ts` - 重複 `handleClose` メソッド名を分離
+- **チャットUI改善:**
+  - アバター: 丸い背景削除、Lucide SVGアイコン（user/bot）に統一
+  - ユーザーメッセージ: 薄い緑（#81c784）に変更
+
+### 成功
+
+- GLM-4.7-flash（無料モデル）での動作確認完了
+- 5プロバイダー（Anthropic/OpenAI/Google/Ollama/GLM）対応
+- UIからLLM設定変更・保存・接続テスト可能
+- チャットUIがサイドバーとアイコン統一
+
+### 失敗/課題
+
+- 最初のGLM実装でエンドポイントURL間違い（`open.bigmodel.cn` → `api.z.ai`）
+- モデル名間違い（`glm-4-flash` → `glm-4.7-flash`）
+- JWT認証実装は不要だった（単純なBearer Token認証で動作）
+- better-sqlite3のネイティブモジュールリビルドが必要だった
+
+### 学び
+
+- Z.ai API正しいURL: `https://api.z.ai/api/paas/v4`
+- GLM無料モデル: `glm-4.7-flash`（有料: `glm-4.7`, `glm-4.7-flashx`）
+- pnpm workspace でネイティブモジュールは `pnpm.onlyBuiltDependencies` で許可が必要
+- WebSocketレスポンスのプロパティ名（`data` vs `payload`）は統一が重要
+
+### 次のステップ
+
+- ゲートウェイのデーモン化（launchd plist 作成）
+- 残り画面（Approval, Schedule, History, Account）実装
+- エラーメッセージのUI表示改善
+
+---
+
+## 2026-01-26 15:08 [IMPL] Phase 3 UI実装（SNS連携・承認フロー）
+
+### 実装内容
+
+- **共通コンポーネント新規作成:**
+  - `ui/src/ui/types.ts` - Phase 3 型定義（Platform, Content, Account, ApiToken）
+  - `ui/src/ui/common/modal.ts` - 汎用モーダルコンポーネント
+  - `ui/src/ui/common/platform-badge.ts` - プラットフォームバッジ（X/note/YouTube等）
+  - `ui/src/ui/common/content-card.ts` - コンテンツカード（承認/却下アクション付き）
+  - `ui/src/ui/common/index.ts` - 共通コンポーネントexport
+- **並列実装（GLM + Opencode）:**
+  - GLM: `approval-page.ts` - 承認キュー画面（フィルタ、ソート、プレビューモーダル）
+  - GLM: `accounts-page.ts` - アカウント管理画面（追加モーダル、再認証、削除）
+  - Opencode: `contents-page.ts` - コンテンツ履歴画面（テーブル、ステータスタブ、検索）
+  - GLM: `schedule-page.ts` - スケジュール管理画面（Today/Week/Month、編集モーダル）
+- **ナビゲーション更新:**
+  - `sidebar-nav.ts` - Contents, Schedule, Accounts追加、アイコン追加
+  - `app-shell.ts` - 4画面のルーティング追加
+
+### 成功
+
+- Phase 3 UI 5画面すべて実装完了
+- GLM + Opencode 並列実装が機能（/parallel-impl スキル使用）
+- モックデータ付きで動作確認可能な状態
+- 全画面でスタイル（緑テーマ、Geist Mono）統一
+- プラットフォームバッジ6種類対応（X, note, YouTube, Instagram, TikTok, Other）
+
+### 失敗/課題
+
+- Opencodeのcontents-page.ts出力が不完全 → Claudeで補完
+- GLM生成コードのコンポーネント名修正が必要（`platform-badge` → `indra-platform-badge`）
+- Settings APIタブは未実装（計画から除外）
+
+### 学び
+
+- GLM (glm-4.7) でUI生成は高品質、ただしインポートパス・コンポーネント名の修正が必要
+- 並列実装スキルで複数タスクを同時処理可能（レート制限に注意: 5件/batch推奨）
+- Litコンポーネントの `@action` イベントで子→親へのアクション通知が簡潔
+- `indra-modal` の `slot="footer"` でカスタムフッターボタンを配置可能
+
+### 関連タスク
+
+Phase 3: Approval, Contents, Accounts, Schedule 画面実装
+
+---
+
+## 2026-01-26 15:19 [REFACTOR] Phase 3 UIコード整理
+
+### 実装内容
+
+- **共通スタイルモジュール新規作成:**
+  - `ui/src/ui/common/styles.ts` - STATUS_CONFIG、共通CSSスタイルを統合
+- **code-simplifierによるリファクタリング:**
+  - 7ファイルのコード整理（approval, contents, accounts, schedule, modal, platform-badge, content-card）
+  - 重複コード削除（STATUS_CONFIG統合）
+  - 型エイリアス追加（PlatformConfig, ModalSize, StatusFilter, AccountStatus等）
+  - 命名規則統一、CSS変数一貫使用
+
+### 成功
+
+- 重複していた`STATUS_CONFIG`を`styles.ts`に統合
+- `""` → `null`、`||` → `??`（nullish coalescing）に統一
+- インラインスタイル削除、CSSクラス化
+- ヘルパーメソッド抽出（`getStartOfToday`, `capitalizeFirst`等）
+- ビルド・lintエラーなし
+
+### 学び
+
+- 共通定数は早めに共通モジュールに抽出すべき
+- 空値処理は`null`とnullish coalescingで統一すると一貫性が保てる
+- code-simplifierで自動リファクタリング可能だが、生成コードの品質向上に有効
+
+### 関連タスク
+
+Phase 3 コード品質改善

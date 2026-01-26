@@ -1,5 +1,9 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, svg } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+
+// Lucide icons
+const userIcon = svg`<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>`;
+const botIcon = svg`<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>`;
 
 interface Message {
   id: string;
@@ -97,7 +101,7 @@ export class ChatUIElement extends LitElement {
     }
 
     .message.user .message-content {
-      background: var(--primary, #2e7d32);
+      background: #81c784;
       color: white;
     }
 
@@ -118,24 +122,22 @@ export class ChatUIElement extends LitElement {
     }
 
     .avatar {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
+      width: 24px;
+      height: 24px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
       flex-shrink: 0;
     }
 
-    .message.user .avatar {
-      background: var(--primary, #2e7d32);
-      color: white;
-    }
-
-    .message.assistant .avatar {
-      background: var(--text-secondary, #636e72);
-      color: white;
+    .avatar svg {
+      width: 20px;
+      height: 20px;
+      stroke: #9e9e9e;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
     }
 
     .input-area {
@@ -244,8 +246,8 @@ export class ChatUIElement extends LitElement {
     this.ws = new WebSocket(this.wsUrl);
     this.ws.onopen = this.handleOpen.bind(this);
     this.ws.onmessage = this.handleMessage.bind(this);
-    this.ws.onclose = this.handleClose.bind(this);
-    this.ws.onerror = this.handleClose.bind(this);
+    this.ws.onclose = this.handleConnectionClose.bind(this);
+    this.ws.onerror = this.handleConnectionClose.bind(this);
   }
 
   private handleOpen(): void {
@@ -327,7 +329,7 @@ export class ChatUIElement extends LitElement {
     this.isSending = false;
   }
 
-  private handleClose(): void {
+  private handleConnectionClose(): void {
     this.isConnected = false;
     // Reject all pending requests
     for (const pending of this.pendingRequests.values()) {
@@ -425,7 +427,7 @@ export class ChatUIElement extends LitElement {
     });
   }
 
-  private handleClose(): void {
+  private handleUIClose(): void {
     this.dispatchEvent(
       new CustomEvent("close", { bubbles: true, composed: true }),
     );
@@ -433,7 +435,7 @@ export class ChatUIElement extends LitElement {
 
   render() {
     return html`
-      <button class="close-btn" @click="${this.handleClose}" title="Close">
+      <button class="close-btn" @click="${this.handleUIClose}" title="Close">
         ×
       </button>
 
@@ -443,7 +445,11 @@ export class ChatUIElement extends LitElement {
             <div
               class="message ${msg.role} ${msg.isStreaming ? "streaming" : ""}"
             >
-              <div class="avatar">${msg.role === "user" ? "👤" : "🤖"}</div>
+              <div class="avatar">
+                <svg viewBox="0 0 24 24">
+                  ${msg.role === "user" ? userIcon : botIcon}
+                </svg>
+              </div>
               <div class="message-content">${msg.content}</div>
             </div>
           `,

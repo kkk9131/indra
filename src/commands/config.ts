@@ -9,6 +9,7 @@ const PROVIDERS: { value: ProviderId; label: string }[] = [
   { value: "openai", label: "OpenAI" },
   { value: "google", label: "Google Gemini" },
   { value: "ollama", label: "Ollama (Local)" },
+  { value: "glm", label: "GLM (Z.ai)" },
 ];
 
 const DEFAULT_MODELS: Record<ProviderId, string> = {
@@ -16,6 +17,7 @@ const DEFAULT_MODELS: Record<ProviderId, string> = {
   openai: "gpt-4o",
   google: "gemini-2.0-flash",
   ollama: "llama3.2",
+  glm: "glm-4.7-flash",
 };
 
 export function registerConfigCommand(cli: Command): void {

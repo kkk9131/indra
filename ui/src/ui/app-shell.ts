@@ -7,6 +7,10 @@ import "./status-bar.js";
 import "./home-page.js";
 import "./settings-page.js";
 import "./chat-ui.js";
+import "./approval-page.js";
+import "./contents-page.js";
+import "./accounts-page.js";
+import "./schedule-page.js";
 
 @customElement("indra-app-shell")
 export class AppShellElement extends LitElement {
@@ -143,6 +147,14 @@ export class AppShellElement extends LitElement {
             .scheduleItems="${this.scheduleItems}"
           ></indra-home-page>
         `;
+      case "approval":
+        return html`<indra-approval-page></indra-approval-page>`;
+      case "contents":
+        return html`<indra-contents-page></indra-contents-page>`;
+      case "schedule":
+        return html`<indra-schedule-page></indra-schedule-page>`;
+      case "accounts":
+        return html`<indra-accounts-page></indra-accounts-page>`;
       case "settings":
         return html`<indra-settings-page></indra-settings-page>`;
       default:
