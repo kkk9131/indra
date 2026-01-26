@@ -4,7 +4,7 @@ import { customElement, state } from "lit/decorators.js";
 // Lucide icon - Bot
 const botIcon = svg`<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>`;
 
-type TabId = "general" | "llm" | "sns" | "cron";
+type TabId = "general" | "llm" | "cron";
 type Language = "en" | "ja" | "zh";
 type Theme = "light" | "dark" | "auto";
 
@@ -28,7 +28,6 @@ interface Config {
 const TABS: { id: TabId; label: string }[] = [
   { id: "general", label: "General" },
   { id: "llm", label: "LLM" },
-  { id: "sns", label: "SNS" },
   { id: "cron", label: "Cron" },
 ];
 
@@ -510,7 +509,6 @@ export class SettingsPageElement extends LitElement {
     const tabRenderers: Record<TabId, () => ReturnType<typeof html>> = {
       general: () => this.renderGeneralTab(),
       llm: () => this.renderLLMTab(),
-      sns: () => this.renderSNSTab(),
       cron: () => this.renderCronTab(),
     };
     return tabRenderers[this.activeTab]();
@@ -660,53 +658,6 @@ export class SettingsPageElement extends LitElement {
         >
           ${this.testingConnection ? "Testing..." : "Test Connection"}
         </button>
-      </div>
-    `;
-  }
-
-  private renderSNSTab() {
-    return html`
-      <h2 class="section-title">SNS Integration</h2>
-
-      <div class="list-item">
-        <div class="list-item-info">
-          <div class="list-item-title">Twitter / X</div>
-          <div class="list-item-desc">Connect your Twitter account</div>
-        </div>
-        <div class="switch"></div>
-      </div>
-
-      <div class="form-group">
-        <label>API Key</label>
-        <input type="password" placeholder="Twitter API Key" />
-      </div>
-
-      <div class="form-group">
-        <label>API Secret</label>
-        <input type="password" placeholder="Twitter API Secret" />
-      </div>
-
-      <div class="form-group">
-        <label>Access Token</label>
-        <input type="password" placeholder="Access Token" />
-      </div>
-
-      <div class="form-group">
-        <label>Access Token Secret</label>
-        <input type="password" placeholder="Access Token Secret" />
-      </div>
-
-      <div class="list-item">
-        <div class="list-item-info">
-          <div class="list-item-title">Auto-post</div>
-          <div class="list-item-desc">Automatically post approved content</div>
-        </div>
-        <div class="switch active"></div>
-      </div>
-
-      <div class="actions">
-        <button class="btn">Save Configuration</button>
-        <button class="btn btn-secondary">Authorize</button>
       </div>
     `;
   }

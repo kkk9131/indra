@@ -16,6 +16,9 @@ importers:
       "@types/jsonwebtoken":
         specifier: ^9.0.10
         version: 9.0.10
+      agent-browser:
+        specifier: ^0.8.0
+        version: 0.8.0
       better-sqlite3:
         specifier: ^11.8.1
         version: 11.10.0
@@ -852,6 +855,13 @@ packages:
         integrity: sha512-fB2V0JFrQSMsCo9HiSq3Ezpdv4iYaXRG1Sx8edX3MwxfyNn83mKiGzOcH+Fkxt4MHxr3y42fQi1oeAInqgX2QA==,
       }
 
+  agent-browser@0.8.0:
+    resolution:
+      {
+        integrity: sha512-kbDTfJS5lzKm2SfEv2Xf7UeAmX+Wg+5TS6HacN5SdTV/IjdsIZCwuwMEcVyY78PlcOQ1yQvK5EGqifwzxsnwJw==,
+      }
+    hasBin: true
+
   assertion-error@2.0.1:
     resolution:
       {
@@ -1278,6 +1288,14 @@ packages:
         integrity: sha512-5gTmgEY/sqK6gFXLIsQNH19lWb4ebPDLA4SdLP7dsWkIXHWlG66oPuVvXSGFPppYZz8ZDZq0dYYrbHfBCVUb1Q==,
       }
     engines: { node: ">=12" }
+
+  playwright-core@1.58.0:
+    resolution:
+      {
+        integrity: sha512-aaoB1RWrdNi3//rOeKuMiS65UCcgOVljU46At6eFcOFPFHWtd2weHRRow6z/n+Lec0Lvu0k9ZPKJSjPugikirw==,
+      }
+    engines: { node: ">=18" }
+    hasBin: true
 
   postcss@8.5.6:
     resolution:
@@ -1960,6 +1978,15 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 2.0.0
 
+  agent-browser@0.8.0:
+    dependencies:
+      playwright-core: 1.58.0
+      ws: 8.19.0
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
   assertion-error@2.0.1: {}
 
   base64-js@1.5.1: {}
@@ -2188,6 +2215,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.3: {}
+
+  playwright-core@1.58.0: {}
 
   postcss@8.5.6:
     dependencies:

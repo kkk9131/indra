@@ -47,6 +47,8 @@ pnpm lint             # リント
 ## 横断機能
 
 - **ログ・分析**: 全操作＋外部サービス連携を記録・分析
+- **ブラウザ自動化**: agent-browserによるWeb操作・スクレイピング
+  → 詳細: `.claude/skills/agent-browser.md`
 
 ## 参考リポジトリ
 
@@ -59,3 +61,8 @@ pnpm lint             # リント
 - アーキテクチャ: `.claude/agent-docs/02-architecture.md`
 - フェーズ計画: `.claude/agent-docs/04-phases.md`
 - UIデザイン: `.claude/agent-docs/06-ui-design.md`
+- ブラウザ自動化: `.claude/agent-docs/07-browser-automation.md`
+
+## Skills
+
+- agent-browser: `.claude/skills/agent-browser.md`

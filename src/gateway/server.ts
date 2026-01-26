@@ -6,6 +6,8 @@ import { SessionManager } from "../infra/index.js";
 import { ConfigManager, type Config } from "../config/index.js";
 import {
   AgentSDKProvider,
+  type AgentChatOptions,
+  type AgentOptions,
   type LLMProvider,
   type Message,
 } from "../llm/index.js";
@@ -284,7 +286,12 @@ export class GatewayServer {
     frame: RequestFrame,
   ): Promise<void> {
     try {
-      const params = frame.params as { message: string; history?: Message[] };
+      const params = frame.params as {
+        message: string;
+        history?: Message[];
+        agentMode?: boolean;
+        agentOptions?: AgentOptions;
+      };
       const config = this.configManager.get();
       const provider = this.createLLMProvider(config.llm);
 
@@ -293,10 +300,17 @@ export class GatewayServer {
         { role: "user", content: params.message },
       ];
 
-      const options = { systemPrompt: config.llm.systemPrompt };
-
-      for await (const chunk of provider.chatStream(messages, options)) {
-        ws.send(JSON.stringify(createEvent("chat.chunk", { text: chunk })));
+      // Use agent mode if requested
+      if (params.agentMode && provider.chatStreamWithAgent) {
+        await this.handleAgentChat(
+          ws,
+          provider,
+          messages,
+          config,
+          params.agentOptions,
+        );
+      } else {
+        await this.handleSimpleChat(ws, provider, messages, config);
       }
 
       ws.send(JSON.stringify(createEvent("chat.done", {})));
@@ -304,6 +318,90 @@ export class GatewayServer {
     } catch (error) {
       console.error("LLM Error:", error);
       sendError(ws, frame.id, "LLM_ERROR", getErrorMessage(error));
+    }
+  }
+
+  private async handleSimpleChat(
+    ws: WebSocket,
+    provider: LLMProvider,
+    messages: Message[],
+    config: Config,
+  ): Promise<void> {
+    const options = { systemPrompt: config.llm.systemPrompt };
+
+    for await (const chunk of provider.chatStream(messages, options)) {
+      ws.send(JSON.stringify(createEvent("chat.chunk", { text: chunk })));
+    }
+  }
+
+  private async handleAgentChat(
+    ws: WebSocket,
+    provider: LLMProvider,
+    messages: Message[],
+    config: Config,
+    agentOptions?: AgentOptions,
+  ): Promise<void> {
+    if (!provider.chatStreamWithAgent) {
+      throw new Error("Agent mode not supported by this provider");
+    }
+
+    const options: AgentChatOptions = {
+      systemPrompt: config.llm.systemPrompt,
+      agent: {
+        maxTurns: agentOptions?.maxTurns ?? 10,
+        tools: agentOptions?.tools ?? [
+          "Read",
+          "Glob",
+          "Grep",
+          "Bash",
+          "WebSearch",
+        ],
+        permissionMode: agentOptions?.permissionMode ?? "acceptEdits",
+      },
+    };
+
+    for await (const event of provider.chatStreamWithAgent(messages, options)) {
+      switch (event.type) {
+        case "text":
+          ws.send(
+            JSON.stringify(createEvent("chat.chunk", { text: event.text })),
+          );
+          break;
+        case "tool_start":
+          ws.send(
+            JSON.stringify(
+              createEvent("agent.tool_start", {
+                tool: event.tool,
+                input: event.input,
+                toolUseId: event.toolUseId,
+              }),
+            ),
+          );
+          break;
+        case "tool_result":
+          ws.send(
+            JSON.stringify(
+              createEvent("agent.tool_result", {
+                tool: event.tool,
+                result: event.result,
+                toolUseId: event.toolUseId,
+              }),
+            ),
+          );
+          break;
+        case "turn_complete":
+          ws.send(
+            JSON.stringify(
+              createEvent("agent.turn_complete", {
+                turnNumber: event.turnNumber,
+              }),
+            ),
+          );
+          break;
+        case "done":
+          // Final result is handled by chat.done
+          break;
+      }
     }
   }
 

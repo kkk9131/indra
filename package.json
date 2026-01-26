@@ -34,6 +34,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.2.19",
     "@clack/prompts": "^0.8.2",
     "@types/jsonwebtoken": "^9.0.10",
+    "agent-browser": "^0.8.0",
     "better-sqlite3": "^11.8.1",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",

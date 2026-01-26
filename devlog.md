@@ -493,3 +493,166 @@ Phase 3 コード品質改善
 ### 関連タスク
 
 Phase 3: X運用可能化（OAuth 2.0 PKCE + 承認フロー完成）
+
+---
+
+## 2026-01-27 06:31 [IMPL] Anthropic Newsスキルを実装
+
+### 実装内容
+
+- **新規スキル作成:**
+  - `.claude/skills/anthropic-news/SKILL.md` - スキル定義（発動キーワード、取得ソース、ワークフロー）
+  - `.claude/skills/anthropic-news/references/webfetch-guide.md` - WebFetch詳細、プロンプトテンプレート
+  - `.claude/skills/anthropic-news/examples/usage.md` - 使用例
+- **動作確認・URL更新:**
+  - WebFetchでAnthropicブログ・Claude Code製品ページから情報取得を確認
+  - リダイレクト検出に基づきスキルファイルのURLを更新
+
+### 成功
+
+- 計画通りのディレクトリ構造でスキル作成完了
+- `/anthropic-news`、`claude最新情報`、`anthropic news` で発動可能
+- Anthropicブログから最新記事5件取得成功（Claude's new constitution等）
+- Claude Code製品ページから機能一覧取得成功
+
+### 失敗/課題
+
+- ドキュメントURL (`docs.anthropic.com/claude-code/`) が複数回リダイレクト後404
+- 計画時点のURLが古くなっていた
+- 最終的に製品ページ（`claude.com/product/claude-code`）に変更
+
+### 学び
+
+- Anthropic公式URLは頻繁に変更される（docs.anthropic.com → code.claude.com、www.anthropic.com → claude.com）
+- WebFetchでリダイレクト検出時は新しいURLで再取得が必要
+- スキルには「URLはリダイレクトされる場合がある」の注意書きを含めると有用
+- ブログは安定（`www.anthropic.com/news`）、ドキュメントは流動的
+
+---
+
+## 2026-01-27 06:38 [DOCS] agent-browser導入ドキュメントを作成
+
+### 実装内容
+
+- **新規ドキュメント作成:**
+  - `.claude/agent-docs/07-browser-automation.md` - agent-browser詳細（7セクション）
+    - 概要（選定理由、ユースケース）
+    - インストール・セットアップ
+    - 基本コマンド（open, snapshot, click, fill, screenshot等）
+    - Indraでの活用パターン（SNS投稿、ニュース取得）
+    - API統合（Node.jsラッパー、エラーハンドリング）
+    - セッション・プロファイル管理
+    - ベストプラクティス
+- **既存ドキュメント更新:**
+  - `03-tech-stack.md` - セクション12「ブラウザ自動化」追加
+  - `05-references.md` - セクション5「ブラウザ自動化」追加（比較表含む）
+
+### 成功
+
+- 計画通りの3ファイル変更完了
+- 既存ドキュメントスタイルと一貫性維持
+- 比較検討した選択肢（browser-use, Clawdbot内蔵, Puppeteer, Playwright）を文書化
+
+### 学び
+
+- agent-browserはVercel Labs製、Rust CLI + Node.js daemon構成で高速
+- LLM不要のコマンドベース操作（browser-useとの差別化ポイント）
+- @e形式でアクセシビリティツリー要素を参照（snapshotで取得）
+- プロファイル機能でログイン状態永続化可能（SNS運用に有用）
+
+### 次のステップ
+
+- agent-browserのインストール・動作検証
+- Node.jsラッパーモジュール実装
+- SNS自動投稿ワークフローへの統合
+
+---
+
+## 2026-01-27 06:53 [IMPL] オーケストレーター機能実装（Agent SDK ツール有効化）
+
+### 実装内容
+
+- **Agent SDK Provider 拡張:**
+  - `src/llm/types.ts` - `AgentOptions`, `AgentChatOptions`, `AgentEvent` 型追加
+  - `src/llm/agent-sdk.ts` - `chatStreamWithAgent()` メソッド追加
+    - maxTurns（デフォルト10）、tools、permissionMode サポート
+    - ツール実行イベント（tool_start, tool_result, turn_complete）のストリーミング
+- **プロトコル拡張:**
+  - `src/gateway/protocol/frame.ts` - エージェントイベントタイプのドキュメント追加
+- **Gateway 拡張:**
+  - `src/gateway/server.ts` - `handleAgentChat()` メソッド追加
+    - `agentMode` パラメータで切り替え
+    - デフォルトツール: Read, Glob, Grep, Bash, WebSearch
+    - SDK イベント → WebSocket イベント変換
+- **Chat UI 拡張:**
+  - `ui/src/ui/chat-ui.ts` - ツール実行インジケーター表示
+    - `ToolUse` 型追加（toolUseId, tool, input, result, isRunning）
+    - `handleToolStart()`, `handleToolResult()` メソッド追加
+    - ツール実行中アニメーション、結果の折りたたみ表示
+    - Agent Mode 常時ON（切り替えUI不要と判断して削除）
+
+### 成功
+
+- Agent SDK のツール機能（Read, Glob, Grep, Bash, WebSearch）が Chat UI から利用可能に
+- ツール実行状況がリアルタイムで UI に表示される
+- maxTurns: 10 で無限ループ防止
+- permissionMode: acceptEdits で開発時のツール実行を許可
+- ビルド・lint エラーなし
+
+### 学び
+
+- Claude Agent SDK の `query()` は複数の message type を返す（assistant, user, result）
+- tool_use は assistant message 内の content block として返される
+- tool_result は user message（SDK が自動で送信）内の content block として返される
+- `permissionMode` の型は SDK の型と一致させる必要がある
+
+### 次のステップ
+
+- カスタムツール追加（post_create, post_approve, news_fetch）
+- パーミッションUI（本番環境では人間の確認を挟む）
+
+---
+
+## 2026-01-27 07:01 [IMPL] agent-browserツール統合 + スキル導入
+
+### 実装内容
+
+- **ブラウザ自動化ツール:**
+  - `src/tools/browser.ts` - agent-browser CLIラッパー（26関数）
+  - `src/tools/index.ts` - エクスポート
+  - `src/tools/browser.test.ts` - テスト（3件パス）
+  - グローバルインストール版agent-browser使用（Apple Silicon対応）
+- **段階的開示に従ったスキル構成:**
+  - `.claude/skills/agent-browser.md` - トリガー条件+概要のみ
+  - `.claude/references/agent-browser/` - 詳細ドキュメント（6ファイル）
+    - commands.md, snapshot-refs.md, session-management.md
+    - authentication.md, video-recording.md, proxy-support.md
+  - `.claude/examples/agent-browser/` - 実行可能テンプレート（3ファイル）
+    - form-automation.sh, authenticated-session.sh, capture-workflow.sh
+- **ドキュメント更新:**
+  - `.claude/agent-docs/07-browser-automation.md` - セクション8追加（実装済みツール）
+  - `.claude/CLAUDE.md` - ブラウザ自動化スキル参照追加
+
+### 成功
+
+- agent-browser統合完了（グローバル版のフルパス使用でVitest問題解決）
+- 段階的開示ルールに完全準拠したスキル構成
+- Vercel Labsのskills/agent-browser全内容を日本語化して移植
+- テスト3件パス（open, snapshot, screenshot）
+
+### 失敗/課題
+
+- 最初pnpmでローカルインストールしたが、Rust版がdarwin-arm64で利用不可
+- Vitest環境でnode_modules/.bin/agent-browserが優先され、バイナリエラー
+- グローバル版のフルパス（`~/.npm-global/bin/agent-browser`）指定で解決
+
+### 学び
+
+- agent-browserはApple SiliconではグローバルインストールのRust版が必須
+- execSyncでコマンド実行時、node_modules/.binが優先されるため絶対パス指定が有効
+- `AGENT_BROWSER_PATH`環境変数でカスタムパス指定可能
+- 段階的開示: skill.md（概要）→ references/（詳細）→ examples/（具体例）
+
+### 関連タスク
+
+agent-browser統合、スキル移植

@@ -1,5 +1,8 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type {
+  AgentChatOptions,
+  AgentEvent,
+  AgentOptions,
   ChatOptions,
   LLMProvider,
   LLMProviderConfig,
@@ -55,6 +58,143 @@ export class AgentSDKProvider implements LLMProvider {
         yield extractTextFromContent(message.message.content);
       }
     }
+  }
+
+  async *chatStreamWithAgent(
+    messages: Message[],
+    options?: AgentChatOptions,
+  ): AsyncIterable<AgentEvent> {
+    const agentOpts = options?.agent ?? {};
+    const queryOptions = this.buildAgentQueryOptions(
+      messages,
+      options,
+      agentOpts,
+    );
+
+    let turnNumber = 0;
+
+    for await (const message of query(queryOptions)) {
+      // Handle assistant text messages
+      if (message.type === "assistant" && message.message?.content) {
+        const content = message.message.content as unknown[];
+        for (const block of content) {
+          if (this.isTextBlock(block)) {
+            yield { type: "text", text: block.text };
+          } else if (this.isToolUseBlock(block)) {
+            yield {
+              type: "tool_start",
+              tool: block.name,
+              input: block.input,
+              toolUseId: block.id,
+            };
+          }
+        }
+      }
+
+      // Handle tool results
+      if (message.type === "user" && message.message?.content) {
+        const content = message.message.content as unknown[];
+        for (const block of content) {
+          if (this.isToolResultBlock(block)) {
+            yield {
+              type: "tool_result",
+              tool: block.tool_use_id,
+              result: this.extractToolResult(block.content),
+              toolUseId: block.tool_use_id,
+            };
+          }
+        }
+        turnNumber++;
+        yield { type: "turn_complete", turnNumber };
+      }
+
+      // Handle final result
+      if (
+        message.type === "result" &&
+        message.subtype === "success" &&
+        message.result
+      ) {
+        yield { type: "done", result: message.result };
+      }
+    }
+  }
+
+  private isTextBlock(block: unknown): block is { type: "text"; text: string } {
+    return (
+      typeof block === "object" &&
+      block !== null &&
+      (block as { type?: string }).type === "text" &&
+      typeof (block as { text?: string }).text === "string"
+    );
+  }
+
+  private isToolUseBlock(
+    block: unknown,
+  ): block is { type: "tool_use"; id: string; name: string; input: unknown } {
+    return (
+      typeof block === "object" &&
+      block !== null &&
+      (block as { type?: string }).type === "tool_use"
+    );
+  }
+
+  private isToolResultBlock(
+    block: unknown,
+  ): block is { type: "tool_result"; tool_use_id: string; content: unknown } {
+    return (
+      typeof block === "object" &&
+      block !== null &&
+      (block as { type?: string }).type === "tool_result"
+    );
+  }
+
+  private extractToolResult(content: unknown): string {
+    if (typeof content === "string") {
+      return content;
+    }
+    if (Array.isArray(content)) {
+      return content
+        .filter(
+          (item): item is { type: "text"; text: string } =>
+            typeof item === "object" &&
+            item !== null &&
+            (item as { type?: string }).type === "text",
+        )
+        .map((item) => item.text)
+        .join("\n");
+    }
+    return JSON.stringify(content);
+  }
+
+  private buildAgentQueryOptions(
+    messages: Message[],
+    options: AgentChatOptions | undefined,
+    agentOpts: AgentOptions,
+  ) {
+    type SDKPermissionMode = "default" | "acceptEdits" | "bypassPermissions";
+
+    const queryOpts: {
+      model: ClaudeModel;
+      maxTurns: number;
+      allowedTools?: string[];
+      permissionMode?: SDKPermissionMode;
+    } = {
+      model: this.resolveModel(options),
+      maxTurns: agentOpts.maxTurns ?? 10,
+    };
+
+    if (agentOpts.tools && agentOpts.tools.length > 0) {
+      queryOpts.allowedTools = agentOpts.tools;
+    }
+
+    if (agentOpts.permissionMode) {
+      queryOpts.permissionMode = agentOpts.permissionMode as SDKPermissionMode;
+    }
+
+    return {
+      prompt: this.buildPrompt(messages, options),
+      options: queryOpts,
+    };
   }
 
   private buildQueryOptions(

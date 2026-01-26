@@ -4,6 +4,15 @@ import { customElement, property, state } from "lit/decorators.js";
 // Lucide icons
 const userIcon = svg`<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>`;
 const botIcon = svg`<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>`;
+const toolIcon = svg`<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>`;
+
+interface ToolUse {
+  toolUseId: string;
+  tool: string;
+  input: unknown;
+  result?: string;
+  isRunning: boolean;
+}
 
 interface Message {
   id: string;
@@ -11,6 +20,7 @@ interface Message {
   content: string;
   timestamp: number;
   isStreaming?: boolean;
+  toolUses?: ToolUse[];
 }
 
 @customElement("indra-chat-ui")
@@ -144,7 +154,7 @@ export class ChatUIElement extends LitElement {
       display: flex;
       gap: 8px;
       padding: 16px;
-      background: white;
+      background: var(--bg-primary, #e8f5e9);
       border-top: 1px solid var(--border, #e0e0e0);
     }
 
@@ -202,6 +212,85 @@ export class ChatUIElement extends LitElement {
     .status.disconnected {
       color: #d32f2f;
     }
+
+    .tool-uses {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .tool-use {
+      background: #f5f5f5;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+    }
+
+    .tool-use.running {
+      border-left: 3px solid #2e7d32;
+      animation: pulse 1.5s infinite;
+    }
+
+    .tool-use.completed {
+      border-left: 3px solid #9e9e9e;
+    }
+
+    @keyframes pulse {
+      0%,
+      100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.7;
+      }
+    }
+
+    .tool-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+      color: #2d3436;
+    }
+
+    .tool-header svg {
+      width: 14px;
+      height: 14px;
+      stroke: #2e7d32;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
+
+    .tool-result {
+      margin-top: 6px;
+      padding: 6px 8px;
+      background: white;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 11px;
+      max-height: 100px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #636e72;
+    }
+
+    .tool-result-toggle {
+      margin-top: 4px;
+      background: none;
+      border: none;
+      color: #2e7d32;
+      cursor: pointer;
+      font-size: 11px;
+      padding: 0;
+    }
+
+    .tool-result-toggle:hover {
+      text-decoration: underline;
+    }
   `;
 
   @property({ type: Boolean })
@@ -224,6 +313,8 @@ export class ChatUIElement extends LitElement {
 
   @state()
   private sessionId?: string;
+
+  private readonly agentMode = true;
 
   private ws?: WebSocket;
   private currentStreamingId?: string;
@@ -268,7 +359,15 @@ export class ChatUIElement extends LitElement {
     id?: string;
     ok?: boolean;
     event?: string;
-    payload?: { sessionId?: string; text?: string };
+    payload?: {
+      sessionId?: string;
+      text?: string;
+      tool?: string;
+      input?: unknown;
+      result?: string;
+      toolUseId?: string;
+      turnNumber?: number;
+    };
     error?: { code: string; message: string };
   }): void {
     // Handle initial session response
@@ -297,6 +396,23 @@ export class ChatUIElement extends LitElement {
         this.appendChunk(frame.payload?.text ?? "");
       } else if (frame.event === "chat.done" && this.currentStreamingId) {
         this.finishStreaming();
+      } else if (
+        frame.event === "agent.tool_start" &&
+        this.currentStreamingId
+      ) {
+        this.handleToolStart(
+          frame.payload?.tool ?? "",
+          frame.payload?.input,
+          frame.payload?.toolUseId ?? "",
+        );
+      } else if (
+        frame.event === "agent.tool_result" &&
+        this.currentStreamingId
+      ) {
+        this.handleToolResult(
+          frame.payload?.toolUseId ?? "",
+          frame.payload?.result ?? "",
+        );
       }
     }
   }
@@ -322,11 +438,56 @@ export class ChatUIElement extends LitElement {
   private finishStreaming(): void {
     if (!this.currentStreamingId) return;
 
-    this.messages = this.messages.map((msg) =>
-      msg.id === this.currentStreamingId ? { ...msg, isStreaming: false } : msg,
-    );
+    this.messages = this.messages.map((msg) => {
+      if (msg.id !== this.currentStreamingId) return msg;
+      // Mark all tools as completed
+      const toolUses = msg.toolUses?.map((t) => ({ ...t, isRunning: false }));
+      return { ...msg, isStreaming: false, toolUses };
+    });
     this.currentStreamingId = undefined;
     this.isSending = false;
+  }
+
+  private handleToolStart(
+    tool: string,
+    input: unknown,
+    toolUseId: string,
+  ): void {
+    if (!this.currentStreamingId) return;
+
+    this.messages = this.messages.map((msg) => {
+      if (msg.id !== this.currentStreamingId) return msg;
+      const toolUses = msg.toolUses ?? [];
+      return {
+        ...msg,
+        toolUses: [...toolUses, { toolUseId, tool, input, isRunning: true }],
+      };
+    });
+
+    this.scrollToBottom();
+  }
+
+  private handleToolResult(toolUseId: string, result: string): void {
+    if (!this.currentStreamingId) return;
+
+    this.messages = this.messages.map((msg) => {
+      if (msg.id !== this.currentStreamingId) return msg;
+      const toolUses = msg.toolUses?.map((t) =>
+        t.toolUseId === toolUseId ? { ...t, result, isRunning: false } : t,
+      );
+      return { ...msg, toolUses };
+    });
+
+    this.scrollToBottom();
+  }
+
+  private scrollToBottom(): void {
+    this.updateComplete.then(() => {
+      const messagesEl = this.shadowRoot?.querySelector(".messages");
+      if (messagesEl) {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+    });
   }
 
   private handleConnectionClose(): void {
@@ -412,7 +573,11 @@ export class ChatUIElement extends LitElement {
         type: "req",
         id: requestId,
         method: "chat.send",
-        params: { message: this.inputText, history },
+        params: {
+          message: this.inputText,
+          history,
+          agentMode: this.agentMode,
+        },
       }),
     );
 
@@ -433,6 +598,36 @@ export class ChatUIElement extends LitElement {
     );
   }
 
+  private truncateResult(result: string, maxLen = 200): string {
+    if (result.length <= maxLen) return result;
+    return result.slice(0, maxLen) + "...";
+  }
+
+  private renderToolUses(toolUses: ToolUse[] | undefined) {
+    if (!toolUses || toolUses.length === 0) return null;
+
+    return html`
+      <div class="tool-uses">
+        ${toolUses.map(
+          (t) => html`
+            <div class="tool-use ${t.isRunning ? "running" : "completed"}">
+              <div class="tool-header">
+                <svg viewBox="0 0 24 24">${toolIcon}</svg>
+                <span>${t.tool}</span>
+                ${t.isRunning ? html`<span>実行中...</span>` : null}
+              </div>
+              ${t.result
+                ? html`<div class="tool-result">
+                    ${this.truncateResult(t.result)}
+                  </div>`
+                : null}
+            </div>
+          `,
+        )}
+      </div>
+    `;
+  }
+
   render() {
     return html`
       <button class="close-btn" @click="${this.handleUIClose}" title="Close">
@@ -451,6 +646,9 @@ export class ChatUIElement extends LitElement {
                 </svg>
               </div>
               <div class="message-content">${msg.content}</div>
+              ${msg.role === "assistant"
+                ? this.renderToolUses(msg.toolUses)
+                : null}
             </div>
           `,
         )}

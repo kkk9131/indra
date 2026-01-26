@@ -50,49 +50,44 @@
 
 ## 7. LLM SDK
 
-| プロバイダー | SDK                       | 備考                      |
-| ------------ | ------------------------- | ------------------------- |
-| Anthropic    | @anthropic-ai/claude-code | Claude Agent SDK（推奨）  |
-| Anthropic    | @anthropic-ai/sdk         | 直接API（フォールバック） |
-| OpenAI       | @openai/codex             | Codex SDK（推奨）         |
-| OpenAI       | openai                    | 直接API（フォールバック） |
-| GitHub       | @github/copilot-sdk       | Copilot SDK（推奨）       |
-| Google       | @google/generative-ai     | REST API                  |
-| Ollama       | ollama (HTTP API)         | ローカル実行              |
+| SDK                            | 備考                                 |
+| ------------------------------ | ------------------------------------ |
+| @anthropic-ai/claude-agent-sdk | Claude Agent SDK（サブスク認証対応） |
 
-### エージェントSDK 使用方法
+### Claude Agent SDK 使用方法
 
 ```typescript
-// Claude Agent SDK
-import Anthropic from "@anthropic-ai/sdk";
-const claude = new Anthropic();
-const response = await claude.messages.create({
-  model: "claude-sonnet-4-20250514",
-  max_tokens: 8096,
-  messages: [{ role: "user", content: prompt }],
-  tools: [...],
-});
+import { query } from "@anthropic-ai/claude-agent-sdk";
 
-// Codex SDK
-import { CodexSDK } from "@openai/codex";
-const codex = new CodexSDK();
-const response = await codex.run({
-  prompt: prompt,
-  tools: [...],
-});
-
-// Copilot SDK
-import { CopilotSDK } from "@github/copilot-sdk";
-const copilot = new CopilotSDK();
-const response = await copilot.run({
-  prompt: prompt,
-  tools: [...],
-});
+for await (const message of query({
+  prompt: "What files are in this directory?",
+  options: {
+    model: "sonnet", // "opus", "sonnet", "haiku"
+    maxTurns: 1,
+  },
+})) {
+  if (message.type === "assistant" && message.message?.content) {
+    for (const block of message.message.content) {
+      if ("text" in block) {
+        console.log(block.text);
+      }
+    }
+  }
+}
 ```
 
-エージェントSDKはサブプロセスとして動作し、ツール使用やマルチターン処理を自律的に実行。
+### 特徴
 
-**注意**: Copilot SDKはCopilot CLI別途インストール + GitHub Copilot購読が必要。
+- **サブスク認証**: ANTHROPIC_API_KEY不要、Claudeサブスクリプションで動作
+- **モデル選択**: opus / sonnet / haiku
+- **ストリーミング対応**: AsyncIterableでリアルタイム出力
+- **ツール機能**: 将来の拡張で活用可能
+
+### 設計方針
+
+- **Claude Agent SDK優先**: 今後の機能追加・リファクタリングはClaude Agent SDKが扱いやすい仕様を優先する
+- **SDKとの親和性**: データ構造、インターフェース設計はSDKのメッセージ形式に合わせる
+- **拡張性**: SDKのツール機能を活用しやすい設計を維持する
 
 ## 8. 開発ツール
 
@@ -147,3 +142,28 @@ packages:
   - ui
   - extensions/*
 ```
+
+## 12. ブラウザ自動化
+
+| ライブラリ    | 用途                           |
+| ------------- | ------------------------------ |
+| agent-browser | ブラウザ操作CLI（Vercel Labs） |
+
+### 特徴
+
+- Rust CLI + Node.js daemon（高速）
+- Playwright/Chromium ベース
+- アクセシビリティツリーで要素参照（@e1形式）
+- セッション・プロファイル永続化
+- LLM不要（コマンドベース）
+
+### 使用例
+
+```bash
+agent-browser open https://x.com
+agent-browser snapshot --interactive
+agent-browser fill @e3 "投稿内容"
+agent-browser click @e5
+```
+
+→ 詳細: `.claude/agent-docs/07-browser-automation.md`

@@ -81,3 +81,20 @@
 - キューベースの非同期処理
 - CLI/Web UIの対等なクライアント設計
 - 永続化による再起動耐性
+
+## 5. ブラウザ自動化
+
+### agent-browser
+
+- GitHub: https://github.com/vercel-labs/agent-browser
+- AI agent向けヘッドレスブラウザCLI
+- Vercel Labs製、Rust + Node.js構成
+
+### 比較検討した選択肢
+
+| ツール       | 特徴              | 不採用理由                |
+| ------------ | ----------------- | ------------------------- |
+| browser-use  | 自然言語操作      | LLMコスト高、Python依存   |
+| Clawdbot内蔵 | 高機能ブラウザAPI | 統合コスト高              |
+| Puppeteer    | Google製          | agent-browserの方が軽量   |
+| Playwright   | Microsoft製       | agent-browserがラップ済み |

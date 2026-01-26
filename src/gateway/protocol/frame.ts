@@ -1,5 +1,16 @@
 import { z } from "zod";
 
+/**
+ * Agent-related event types:
+ * - agent.tool_start: { tool: string; input: unknown; toolUseId: string }
+ * - agent.tool_result: { tool: string; result: string; toolUseId: string }
+ * - agent.turn_complete: { turnNumber: number }
+ *
+ * Chat event types:
+ * - chat.chunk: { text: string }
+ * - chat.done: {}
+ */
+
 export const RequestFrameSchema = z.object({
   type: z.literal("req"),
   id: z.string().uuid(),
