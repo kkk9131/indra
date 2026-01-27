@@ -1,7 +1,10 @@
 /**
  * Browser WebSocket Client Service
- * Provides connection management and post.* method wrappers for UI components.
+ * Provides connection management and method wrappers for UI components.
  */
+
+export type { LogEntry } from "../ui/types.js";
+import type { LogEntry } from "../ui/types.js";
 
 export interface ApprovalItem {
   id: string;
@@ -354,12 +357,30 @@ export class WSClientService extends EventTarget {
     return (res.payload as { articles: NewsArticle[] }).articles;
   }
 
-  async newsRefresh(): Promise<NewsArticle[]> {
+  async newsRefresh(): Promise<{ status: string }> {
     const res = await this.sendRequest("news.refresh", {});
     if (!res.ok) {
       throw new Error(res.error?.message ?? "Failed to refresh news");
     }
-    return (res.payload as { articles: NewsArticle[] }).articles;
+    return res.payload as { status: string };
+  }
+
+  // ===== Log API Methods =====
+
+  async logsList(): Promise<LogEntry[]> {
+    const res = await this.sendRequest("logs.list", {});
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to list logs");
+    }
+    return (res.payload as { logs: LogEntry[] }).logs;
+  }
+
+  async logsRefresh(): Promise<LogEntry[]> {
+    const res = await this.sendRequest("logs.refresh", {});
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to refresh logs");
+    }
+    return (res.payload as { logs: LogEntry[] }).logs;
   }
 }
 

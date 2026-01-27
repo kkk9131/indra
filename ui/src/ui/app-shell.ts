@@ -13,6 +13,7 @@ import "./contents-page.js";
 import "./accounts-page.js";
 import "./schedule-page.js";
 import "./news-page.js";
+import "./log-page.js";
 
 @customElement("indra-app-shell")
 export class AppShellElement extends LitElement {
@@ -168,6 +169,8 @@ export class AppShellElement extends LitElement {
         `;
       case "news":
         return html`<indra-news-page></indra-news-page>`;
+      case "logs":
+        return html`<indra-log-page></indra-log-page>`;
       case "approval":
         return html`<indra-approval-page></indra-approval-page>`;
       case "contents":

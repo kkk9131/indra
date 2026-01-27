@@ -935,3 +935,53 @@ anthropic-newsスキル拡張
 ### 関連タスク
 
 News ストレージ SQLite 移行、anthropic-news スキル更新
+
+---
+
+## 2026-01-28 06:45 [IMPL] ログ画面機能実装（バックエンド〜UI）
+
+### 実装内容
+
+- **Phase 1: バックエンド基盤（GLM実装）:**
+  - `src/logs/types.ts` - LogEntry型、Zodスキーマ、LogExport型
+  - `src/logs/store.ts` - LogStore（SQLite永続化、sessions.dbにlogsテーブル）
+  - `src/logs/collector.ts` - LogCollector（ログ収集、メモリバッファ）
+  - `src/logs/index.ts` - エクスポート
+- **Phase 2: Gateway統合（GLM実装）:**
+  - `src/gateway/server.ts` - LogStore/LogCollector組込み
+  - `logs.list`, `logs.refresh` ハンドラー追加
+  - `handleAgentChat`内でログ収集・DB保存
+- **Phase 3: UI連携（Claude実装）:**
+  - `ui/src/services/ws-client.ts` - `logsList()`, `logsRefresh()` メソッド追加
+  - `ui/src/ui/log-page.ts` - MOCKデータ → wsClient連携、全体コピーボタン追加
+  - `ui/src/ui/log-timeline-item.ts` - 個別コピーボタン追加
+- **コード整理（code-simplifier）:**
+  - `src/logs/store.ts` - `parseRow`/`parseRows`統合、`entryToParams`ヘルパー追加（-70行）
+  - `src/gateway/server.ts` - `saveAgentLog`ヘルパー追加（-40行）
+  - `ui/src/ui/types.ts` - `formatLogForExport`関数を共通化
+  - `ui/src/ui/log-page.ts`, `log-timeline-item.ts` - 重複削除
+
+### 成功
+
+- ログ画面完全動作（フィルタ・ソート・展開/折りたたみ）
+- コピー機能実装（全体Copy All + 個別Copy JSON）
+- Agent操作時にログがDB保存→UI表示
+- GLM + Claudeの並行作業で効率的に実装
+- ビルドエラーなし
+
+### 失敗/課題
+
+- GLM（Opencode）がPhase 3完了前にタイムアウト → Claudeで補完
+- `pnpm dev`はtsc watchのみでサーバー起動せず → 別途`node --env-file=.env dist/gateway/entry.js`必要
+- サーバー再起動忘れで「Unknown method: logs.list」エラー
+
+### 学び
+
+- `opencode run`でGLMにタスク委譲可能、長時間タスクはタイムアウトに注意
+- LogCollectorでメモリ収集→LogStoreでDB保存の2層構造が有効
+- `formatLogForExport`のような変換関数は共通モジュールに配置
+- サーバー側の変更後は必ずプロセス再起動が必要
+
+### 関連タスク
+
+ログ画面機能実装（Phase 1-3）

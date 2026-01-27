@@ -30,7 +30,16 @@ import {
   type CredentialStore,
 } from "../auth/index.js";
 import { DiscordBot, commands as discordCommands } from "../discord/index.js";
+import { LogStore, LogCollector, type AgentActionType } from "../logs/index.js";
 import type { ApprovalItem } from "../approval/types.js";
+
+interface AgentLogParams {
+  tool?: string;
+  toolInput?: unknown;
+  toolResult?: string;
+  turnNumber?: number;
+  text?: string;
+}
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -75,6 +84,8 @@ export class GatewayServer {
   private discordBot: DiscordBot | null = null;
   private newsStore: NewsStore;
   private newsScheduler: NewsScheduler;
+  private logStore: LogStore;
+  private logCollector: LogCollector;
   private port: number;
   private clients: Set<WebSocket> = new Set();
 
@@ -91,6 +102,12 @@ export class GatewayServer {
     this.newsStore = new NewsStore();
     this.newsScheduler = new NewsScheduler(this.newsStore, (articles) => {
       this.broadcast("news.updated", { articles });
+    });
+
+    this.logStore = new LogStore();
+    this.logCollector = new LogCollector({
+      sessionId: "gateway",
+      maxLength: 5000,
     });
 
     this.setupRoutes();
@@ -169,6 +186,19 @@ export class GatewayServer {
 
   isDiscordBotReady(): boolean {
     return this.discordBot?.isReady() ?? false;
+  }
+
+  /** Helper to save agent logs consistently */
+  private saveAgentLog(action: AgentActionType, params: AgentLogParams): void {
+    const logEntry = this.logCollector.addAgentLog(
+      action,
+      params.tool,
+      params.toolInput,
+      params.toolResult,
+      params.turnNumber,
+      params.text,
+    );
+    this.logStore.save(logEntry);
   }
 
   private createLLMProvider(config: Config["llm"]): LLMProvider {
@@ -325,6 +355,14 @@ export class GatewayServer {
         await this.handleNewsRefresh(ws, frame);
         break;
 
+      case "logs.list":
+        this.handleLogsList(ws, frame);
+        break;
+
+      case "logs.refresh":
+        await this.handleLogsRefresh(ws, frame);
+        break;
+
       default:
         sendError(
           ws,
@@ -430,6 +468,7 @@ export class GatewayServer {
           ws.send(
             JSON.stringify(createEvent("chat.chunk", { text: event.text })),
           );
+          this.saveAgentLog("text", { text: event.text });
           break;
         case "tool_start":
           ws.send(
@@ -441,6 +480,10 @@ export class GatewayServer {
               }),
             ),
           );
+          this.saveAgentLog("tool_start", {
+            tool: event.tool,
+            toolInput: event.input,
+          });
           break;
         case "tool_result":
           ws.send(
@@ -452,6 +495,10 @@ export class GatewayServer {
               }),
             ),
           );
+          this.saveAgentLog("tool_result", {
+            tool: event.tool,
+            toolResult: event.result,
+          });
           break;
         case "turn_complete":
           ws.send(
@@ -461,9 +508,9 @@ export class GatewayServer {
               }),
             ),
           );
+          this.saveAgentLog("turn_complete", { turnNumber: event.turnNumber });
           break;
         case "done":
-          // Final result is handled by chat.done
           break;
       }
     }
@@ -736,16 +783,32 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
     sendSuccess(ws, frame.id, { articles });
   }
 
-  private async handleNewsRefresh(
+  private handleNewsRefresh(ws: WebSocket, frame: RequestFrame): void {
+    // 即座に「開始しました」を返す
+    sendSuccess(ws, frame.id, { status: "started" });
+
+    // バックグラウンドで実行（awaitしない）
+    this.newsScheduler.run().catch((error) => {
+      console.error("News refresh failed:", error);
+    });
+  }
+
+  // ===== Log Handlers =====
+
+  private handleLogsList(ws: WebSocket, frame: RequestFrame): void {
+    const logs = this.logStore.list();
+    sendSuccess(ws, frame.id, { logs });
+  }
+
+  private async handleLogsRefresh(
     ws: WebSocket,
     frame: RequestFrame,
   ): Promise<void> {
     try {
-      await this.newsScheduler.run();
-      const articles = this.newsStore.list();
-      sendSuccess(ws, frame.id, { articles });
+      const logs = this.logStore.list();
+      sendSuccess(ws, frame.id, { logs });
     } catch (error) {
-      sendError(ws, frame.id, "NEWS_REFRESH_ERROR", getErrorMessage(error));
+      sendError(ws, frame.id, "LOGS_REFRESH_ERROR", getErrorMessage(error));
     }
   }
 
