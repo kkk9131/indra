@@ -48,7 +48,7 @@ pnpm lint             # リント
 
 - **ログ・分析**: 全操作＋外部サービス連携を記録・分析
 - **ブラウザ自動化**: agent-browserによるWeb操作・スクレイピング
-  → 詳細: `.claude/skills/agent-browser.md`
+  → 詳細: `.claude/skills/agent-browser/SKILL.md`
 
 ## 参考リポジトリ
 
@@ -65,4 +65,5 @@ pnpm lint             # リント
 
 ## Skills
 
-- agent-browser: `.claude/skills/agent-browser.md`
+- agent-browser: `.claude/skills/agent-browser/`
+- anthropic-news: `.claude/skills/anthropic-news/`
