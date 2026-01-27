@@ -2,6 +2,7 @@ import { LitElement, css, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { PendingItem } from "./pending-list.js";
 import type { ScheduleItem } from "./schedule-list.js";
+import { wsClient } from "../services/ws-client.js";
 import "./sidebar-nav.js";
 import "./status-bar.js";
 import "./home-page.js";
@@ -11,6 +12,7 @@ import "./approval-page.js";
 import "./contents-page.js";
 import "./accounts-page.js";
 import "./schedule-page.js";
+import "./news-page.js";
 
 @customElement("indra-app-shell")
 export class AppShellElement extends LitElement {
@@ -131,6 +133,23 @@ export class AppShellElement extends LitElement {
     },
   ];
 
+  connectedCallback(): void {
+    super.connectedCallback();
+    // Initialize WebSocket connection
+    wsClient.connect();
+    wsClient.addEventListener("connected", () => {
+      this.connected = true;
+    });
+    wsClient.addEventListener("disconnected", () => {
+      this.connected = false;
+    });
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    wsClient.disconnect();
+  }
+
   private handleNavigate(e: CustomEvent): void {
     const { id } = e.detail;
     if (id) {
@@ -147,6 +166,8 @@ export class AppShellElement extends LitElement {
             .scheduleItems="${this.scheduleItems}"
           ></indra-home-page>
         `;
+      case "news":
+        return html`<indra-news-page></indra-news-page>`;
       case "approval":
         return html`<indra-approval-page></indra-approval-page>`;
       case "contents":

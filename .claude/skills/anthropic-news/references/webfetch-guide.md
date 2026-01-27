@@ -72,3 +72,35 @@ https://www.anthropic.com/news
 
 - ネットワークエラー: リトライまたはユーザーに通知
 - コンテンツ取得失敗: 取得できたソースのみ出力
+
+## agent-browser によるニュース取得
+
+WebFetch では取得できない場合や、ページ移動が必要な場合に使用。
+
+### Anthropic News (`https://www.anthropic.com/news`)
+
+```bash
+agent-browser open https://www.anthropic.com/news
+agent-browser scroll down
+agent-browser snapshot -i
+agent-browser click @e<該当ref>  # 今日の日付と一致する記事
+agent-browser get text
+agent-browser close
+```
+
+### Claude Blog (`https://claude.com/blog`)
+
+```bash
+agent-browser open https://claude.com/blog
+agent-browser scroll down
+agent-browser snapshot -i
+agent-browser click @e<該当ref>  # 今日の日付と一致する記事
+agent-browser get text
+agent-browser close
+```
+
+### 使用ガイドライン
+
+- snapshot の `-i` オプションでインタラクティブ要素の ref を取得
+- 記事リンクの ref を確認してから click で遷移
+- 複数記事を取得する場合は各記事ごとに open → get text → close のサイクル

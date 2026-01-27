@@ -75,3 +75,7 @@ export interface ApiToken {
   lastUsedAt?: number;
   createdAt: number;
 }
+
+// Re-export news types from ws-client for consistency
+export type { NewsArticle } from "../services/ws-client.js";
+export type NewsSource = "claude-code" | "blog";

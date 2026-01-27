@@ -218,7 +218,7 @@ export class ApprovalPageElement extends LitElement {
   private error: string | null = null;
 
   @state()
-  private isConnected = false;
+  private wsConnected = false;
 
   @state()
   private filterPlatform: FilterOption = "all";
@@ -230,12 +230,12 @@ export class ApprovalPageElement extends LitElement {
   private previewContent: Content | null = null;
 
   private handleConnected = () => {
-    this.isConnected = true;
+    this.wsConnected = true;
     this.loadContents();
   };
 
   private handleDisconnected = () => {
-    this.isConnected = false;
+    this.wsConnected = false;
   };
 
   private handlePostCreated = (e: Event) => {
@@ -268,7 +268,7 @@ export class ApprovalPageElement extends LitElement {
     if (!wsClient.isConnected) {
       wsClient.connect();
     } else {
-      this.isConnected = true;
+      this.wsConnected = true;
       this.loadContents();
     }
   }

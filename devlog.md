@@ -778,3 +778,83 @@ Anthropic News UI実装（モックデータ版）
 ### 関連タスク
 
 Discord Bot連携（計画タスクD1-1〜D3-1完了）
+
+---
+
+## 2026-01-27 23:25 [REFACTOR] News機能コード整理
+
+### 実装内容
+
+- **code-simplifierスキルによるリファクタリング:**
+  - `src/news/store.ts` - Node組み込みモジュールに`node:`prefix統一、`list()`を早期リターンパターンに改善
+  - `src/news/fetcher.ts` - マジックナンバーを定数化（`ONE_DAY_MS`）、nullish coalescingで統一
+  - `src/news/scheduler.ts` - import文のグルーピング改善
+  - `ui/src/ui/types.ts` - 重複`NewsArticle`削除、ws-clientから再エクスポート（Single Source of Truth）
+  - `ui/src/ui/news-page.ts` - ネスト三項演算子を`renderContent()`メソッドに分離
+  - `ui/src/ui/news-timeline-item.ts` - import元をws-client.tsに変更
+  - `ui/src/services/ws-client.ts` - `NewsArticle`インターフェースにJSDocコメント追加
+
+### 成功
+
+- 全9ファイルのコード品質向上
+- 重複定義を排除しSingle Source of Truthを確立
+- ビルド・lintエラーなし
+
+### 学び
+
+- 型定義は1箇所で定義し、他から再エクスポートすることで一貫性を保つ
+- マジックナンバー（24 _ 60 _ 60 \* 1000）は定数化で可読性向上
+- `node:`prefixはNode.js組み込みモジュールの推奨記法
+
+### 関連タスク
+
+News機能コード整理（code-simplifier使用）
+
+---
+
+## 2026-01-28 00:10 [IMPL] Discord状態表示をAccountsページに追加
+
+### 実装内容
+
+- **Gateway拡張:**
+  - `src/gateway/server.ts` - `auth.discord.status` ハンドラー追加
+  - `src/discord/bot.ts` - `getBotName()` メソッド追加
+- **WebSocketクライアント:**
+  - `ui/src/services/ws-client.ts` - `authDiscordStatus()` メソッド追加
+- **Accounts UI:**
+  - `ui/src/ui/accounts-page.ts` - Discordセクション追加（状態表示、Bot名表示）
+  - CSSクラス名を汎用化（`.x-connect-*` → `.connect-*`）
+  - X/Discord両セクションのスタイル統一
+- **CLI改善:**
+  - `src/commands/discord.ts` - `discord status` が環境変数もチェックするよう修正
+- **コード品質:**
+  - `oxlint.json` → `oxlint.toml` にリネーム（TOML形式のため）
+  - `isConnected` → `wsConnected` にリネーム（HTMLElementとの衝突回避）
+  - `news-timeline-item.ts` - 存在しない`content`プロパティ参照を削除
+- **新規スキル:**
+  - `.claude/skills/cli-test/SKILL.md` - CLIテストスキル作成
+
+### 成功
+
+- Discord Bot状態がAccountsページに表示される
+- Bot名（Indra）がUIに表示される
+- X/DiscordセクションのUI統一完了
+- CLI `indra discord status` が環境変数を認識
+- cli-testスキル作成完了
+
+### 失敗/課題
+
+- サーバー再起動なしでは新しいハンドラーが認識されなかった
+- `pnpm dev` は TypeScript watch のみで Gateway は起動しない（`pnpm gateway` が必要）
+- `isConnected` がHTMLElementの既存プロパティと衝突していた
+
+### 学び
+
+- Discord.js で Bot 名取得: `client.user.username`
+- Gateway 起動は `pnpm gateway`、TypeScript watch は `pnpm dev`
+- Lit コンポーネントで `isConnected` は予約語（HTMLElement に存在）
+- TOML ファイルを `.json` 拡張子で保存すると prettier がエラー
+
+### 関連タスク
+
+Discord状態表示、CLI改善、cli-testスキル作成

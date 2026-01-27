@@ -68,6 +68,9 @@ export function registerDiscordCommand(cli: Command): void {
     .description("Check Discord bot status")
     .action(() => {
       const creds = getCredentialStore().getDiscordCredentials();
+      const envToken = process.env.DISCORD_BOT_TOKEN;
+      const envClientId = process.env.DISCORD_CLIENT_ID;
+      const envGuildIds = process.env.DISCORD_GUILD_IDS;
 
       p.intro(chalk.cyan("Discord Bot Status"));
 
@@ -77,8 +80,21 @@ export function registerDiscordCommand(cli: Command): void {
             `Client ID: ${creds.clientId}`,
             `Token: ${creds.botToken.slice(0, 10)}...`,
             `Guild IDs: ${creds.guildIds?.join(", ") ?? "(global)"}`,
+            "",
+            "Source: credentials file",
           ].join("\n"),
-          "Credentials Found",
+          "Configured",
+        );
+      } else if (envToken && envClientId) {
+        p.note(
+          [
+            `Client ID: ${envClientId}`,
+            `Token: ${envToken.slice(0, 10)}...`,
+            `Guild IDs: ${envGuildIds ?? "(global)"}`,
+            "",
+            "Source: environment variables",
+          ].join("\n"),
+          "Configured",
         );
       } else {
         p.note(

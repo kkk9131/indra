@@ -193,4 +193,8 @@ export class DiscordBot {
   isReady(): boolean {
     return this.client.isReady();
   }
+
+  getBotName(): string | null {
+    return this.client.user?.username ?? null;
+  }
 }

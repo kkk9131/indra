@@ -40,11 +40,24 @@ interface EventFrame {
 
 type EventHandler = (payload: unknown, frame: EventFrame) => void;
 
+/** News article type matching backend schema */
+export interface NewsArticle {
+  id: string;
+  source: "claude-code" | "blog";
+  title: string;
+  summary: string | null;
+  url: string;
+  publishedAt: string | null;
+  fetchedAt: string;
+  contentHash?: string;
+}
+
 export type WSClientEvent =
   | "connected"
   | "disconnected"
   | "post.created"
-  | "post.updated";
+  | "post.updated"
+  | "news.updated";
 
 export class WSClientService extends EventTarget {
   private ws?: WebSocket;
@@ -313,6 +326,40 @@ export class WSClientService extends EventTarget {
       throw new Error(res.error?.message ?? "Failed to logout from X");
     }
     return res.payload as { success: boolean };
+  }
+
+  async authDiscordStatus(): Promise<{
+    connected: boolean;
+    configured: boolean;
+    botName: string | null;
+  }> {
+    const res = await this.sendRequest("auth.discord.status", {});
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to get Discord status");
+    }
+    return res.payload as {
+      connected: boolean;
+      configured: boolean;
+      botName: string | null;
+    };
+  }
+
+  // ===== News API Methods =====
+
+  async newsList(): Promise<NewsArticle[]> {
+    const res = await this.sendRequest("news.list", {});
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to list news");
+    }
+    return (res.payload as { articles: NewsArticle[] }).articles;
+  }
+
+  async newsRefresh(): Promise<NewsArticle[]> {
+    const res = await this.sendRequest("news.refresh", {});
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to refresh news");
+    }
+    return (res.payload as { articles: NewsArticle[] }).articles;
   }
 }
 

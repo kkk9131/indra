@@ -313,6 +313,10 @@ export class GatewayServer {
         this.handleAuthXLogout(ws, frame);
         break;
 
+      case "auth.discord.status":
+        this.handleAuthDiscordStatus(ws, frame);
+        break;
+
       case "news.list":
         this.handleNewsList(ws, frame);
         break;
@@ -714,6 +718,15 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
   private handleAuthXLogout(ws: WebSocket, frame: RequestFrame): void {
     this.credentialStore.clearXCredentials();
     sendSuccess(ws, frame.id, { success: true });
+  }
+
+  private handleAuthDiscordStatus(ws: WebSocket, frame: RequestFrame): void {
+    const status = {
+      connected: this.isDiscordBotReady(),
+      configured: !!this.discordBot,
+      botName: this.discordBot?.getBotName() ?? null,
+    };
+    sendSuccess(ws, frame.id, status);
   }
 
   // ===== News Handlers =====
