@@ -12,6 +12,13 @@ import type { XOAuth2Tokens } from "./x-oauth2.js";
 
 export interface StoredCredentials {
   x?: XOAuth2Credentials;
+  discord?: DiscordCredentials;
+}
+
+export interface DiscordCredentials {
+  botToken: string;
+  clientId: string;
+  guildIds?: string[];
 }
 
 export interface XOAuth2Credentials {
@@ -28,13 +35,11 @@ export class CredentialStore {
   private credentials: StoredCredentials;
 
   constructor(basePath?: string) {
-    const base = basePath ?? join(homedir(), ".indra", "credentials");
-    this.credentialsPath = join(base, "credentials.json");
+    const baseDir = basePath ?? join(homedir(), ".indra", "credentials");
+    this.credentialsPath = join(baseDir, "credentials.json");
 
-    // Ensure directory exists
-    const dir = join(base);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
+    if (!existsSync(baseDir)) {
+      mkdirSync(baseDir, { recursive: true });
     }
 
     this.credentials = this.load();
@@ -108,6 +113,26 @@ export class CredentialStore {
     // Consider token expired 5 minutes before actual expiry
     const buffer = 5 * 60 * 1000;
     return Date.now() > creds.expiresAt - buffer;
+  }
+
+  // ===== Discord Credentials =====
+
+  getDiscordCredentials(): DiscordCredentials | undefined {
+    return this.credentials.discord;
+  }
+
+  setDiscordCredentials(creds: DiscordCredentials): void {
+    this.credentials.discord = creds;
+    this.save();
+  }
+
+  clearDiscordCredentials(): void {
+    delete this.credentials.discord;
+    this.save();
+  }
+
+  isDiscordAuthenticated(): boolean {
+    return !!this.credentials.discord?.botToken;
   }
 
   // ===== General Methods =====

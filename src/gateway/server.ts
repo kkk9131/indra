@@ -23,11 +23,14 @@ import {
   type Platform,
   type Content,
 } from "../connectors/index.js";
+import { NewsStore, NewsScheduler } from "../news/index.js";
 import {
   XOAuth2Handler,
   getCredentialStore,
   type CredentialStore,
 } from "../auth/index.js";
+import { DiscordBot, commands as discordCommands } from "../discord/index.js";
+import type { ApprovalItem } from "../approval/types.js";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -69,6 +72,9 @@ export class GatewayServer {
   private xConnector: XConnector | null = null;
   private xOAuth2Handler: XOAuth2Handler | null = null;
   private credentialStore: CredentialStore;
+  private discordBot: DiscordBot | null = null;
+  private newsStore: NewsStore;
+  private newsScheduler: NewsScheduler;
   private port: number;
   private clients: Set<WebSocket> = new Set();
 
@@ -82,10 +88,17 @@ export class GatewayServer {
     this.approvalQueue = new ApprovalQueue();
     this.credentialStore = getCredentialStore();
 
+    this.newsStore = new NewsStore();
+    this.newsScheduler = new NewsScheduler(this.newsStore, (articles) => {
+      this.broadcast("news.updated", { articles });
+    });
+
     this.setupRoutes();
     this.setupWebSocket();
     this.initConnectors();
     this.initOAuth2();
+    this.initDiscordBot();
+    this.newsScheduler.start();
   }
 
   private initConnectors(): void {
@@ -117,6 +130,45 @@ export class GatewayServer {
         redirectUri,
       });
     }
+  }
+
+  private initDiscordBot(): void {
+    const token = process.env.DISCORD_BOT_TOKEN;
+    const clientId = process.env.DISCORD_CLIENT_ID;
+    const guildIds = process.env.DISCORD_GUILD_IDS?.split(",").filter(Boolean);
+
+    if (token && clientId) {
+      this.discordBot = new DiscordBot({
+        token,
+        clientId,
+        guildIds,
+      });
+
+      // Register commands
+      for (const command of discordCommands) {
+        this.discordBot.registerCommand(command);
+      }
+
+      // Set gateway reference for commands to use
+      this.discordBot.setGateway(this);
+    }
+  }
+
+  async startDiscordBot(): Promise<void> {
+    if (this.discordBot) {
+      await this.discordBot.start();
+      console.log("Discord bot started");
+    }
+  }
+
+  async stopDiscordBot(): Promise<void> {
+    if (this.discordBot) {
+      await this.discordBot.stop();
+    }
+  }
+
+  isDiscordBotReady(): boolean {
+    return this.discordBot?.isReady() ?? false;
   }
 
   private createLLMProvider(config: Config["llm"]): LLMProvider {
@@ -259,6 +311,14 @@ export class GatewayServer {
 
       case "auth.x.logout":
         this.handleAuthXLogout(ws, frame);
+        break;
+
+      case "news.list":
+        this.handleNewsList(ws, frame);
+        break;
+
+      case "news.refresh":
+        await this.handleNewsRefresh(ws, frame);
         break;
 
       default:
@@ -656,7 +716,151 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
     sendSuccess(ws, frame.id, { success: true });
   }
 
+  // ===== News Handlers =====
+
+  private handleNewsList(ws: WebSocket, frame: RequestFrame): void {
+    const articles = this.newsStore.list();
+    sendSuccess(ws, frame.id, { articles });
+  }
+
+  private async handleNewsRefresh(
+    ws: WebSocket,
+    frame: RequestFrame,
+  ): Promise<void> {
+    try {
+      await this.newsScheduler.run();
+      const articles = this.newsStore.list();
+      sendSuccess(ws, frame.id, { articles });
+    } catch (error) {
+      sendError(ws, frame.id, "NEWS_REFRESH_ERROR", getErrorMessage(error));
+    }
+  }
+
+  // ===== Discord Integration Methods =====
+
+  async chatForDiscord(prompt: string): Promise<string> {
+    const config = this.configManager.get();
+    const provider = this.createLLMProvider(config.llm);
+
+    const messages: Message[] = [{ role: "user", content: prompt }];
+    const response = await provider.chat(messages, {
+      systemPrompt: config.llm.systemPrompt,
+    });
+
+    return response;
+  }
+
+  async createPostForDiscord(
+    platform: Platform,
+    prompt: string,
+  ): Promise<ApprovalItem> {
+    const config = this.configManager.get();
+    const provider = this.createLLMProvider(config.llm);
+
+    const systemPrompt = `You are a social media content creator. Generate a concise, engaging post for ${platform}.
+Keep it under 280 characters. Be creative and natural. Output ONLY the post text, no explanations.`;
+
+    const generatedText = await provider.chat(
+      [{ role: "user", content: prompt }],
+      { systemPrompt },
+    );
+
+    const item = this.approvalQueue.create({
+      platform,
+      content: { text: generatedText.slice(0, 280) },
+      prompt,
+    });
+
+    // Broadcast to all WebSocket clients
+    this.broadcast("post.created", { item });
+
+    return item;
+  }
+
+  async approvePostForDiscord(
+    id: string,
+  ): Promise<{ success: boolean; item?: ApprovalItem | null; error?: string }> {
+    const item = this.approvalQueue.approve(id);
+    if (!item) {
+      return { success: false, error: `Item not found: ${id}` };
+    }
+
+    if (item.platform !== "x") {
+      return {
+        success: false,
+        error: `Platform not yet supported: ${item.platform}`,
+      };
+    }
+
+    const xCreds = this.credentialStore.getXCredentials();
+    let connector: XConnector;
+
+    if (xCreds && !this.credentialStore.isXTokenExpired()) {
+      connector = new XConnector({ oauth2AccessToken: xCreds.accessToken });
+    } else if (this.xConnector) {
+      connector = this.xConnector;
+    } else {
+      const failedItem = this.approvalQueue.markFailed(
+        id,
+        "X connector not configured",
+      );
+      this.broadcast("post.updated", { item: failedItem });
+      return { success: false, error: "X connector not configured" };
+    }
+
+    try {
+      await connector.connect();
+      const result = await connector.post(item.content);
+
+      if (result.success && result.postId && result.url) {
+        const postedItem = this.approvalQueue.markPosted(
+          id,
+          result.postId,
+          result.url,
+        );
+        this.broadcast("post.updated", { item: postedItem });
+        return { success: true, item: postedItem };
+      } else {
+        const failedItem = this.approvalQueue.markFailed(
+          id,
+          result.error ?? "Unknown error",
+        );
+        this.broadcast("post.updated", { item: failedItem });
+        return { success: false, error: result.error ?? "Failed to post" };
+      }
+    } catch (error) {
+      const failedItem = this.approvalQueue.markFailed(
+        id,
+        getErrorMessage(error),
+      );
+      this.broadcast("post.updated", { item: failedItem });
+      return { success: false, error: getErrorMessage(error) };
+    }
+  }
+
+  getStatusForDiscord(): {
+    gateway: string;
+    xAuth: string;
+    discordBot: string;
+    pendingPosts: number;
+  } {
+    const xCreds = this.credentialStore.getXCredentials();
+    const xAuth = xCreds
+      ? this.credentialStore.isXTokenExpired()
+        ? "Expired"
+        : `Connected (@${xCreds.username ?? "unknown"})`
+      : "Not connected";
+
+    return {
+      gateway: "Running",
+      xAuth,
+      discordBot: this.isDiscordBotReady() ? "Connected" : "Not connected",
+      pendingPosts: this.approvalQueue.list("pending").length,
+    };
+  }
+
   stop(): void {
+    this.newsScheduler.stop();
     this.wss.close();
     this.httpServer.close();
     this.sessionManager.close();

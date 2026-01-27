@@ -14,9 +14,17 @@ export const GeneralConfigSchema = z.object({
 });
 export type GeneralConfig = z.infer<typeof GeneralConfigSchema>;
 
+export const DiscordConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  notificationChannelId: z.string().optional(),
+  guildIds: z.array(z.string()).optional(),
+});
+export type DiscordConfig = z.infer<typeof DiscordConfigSchema>;
+
 export const ConfigSchema = z.object({
   general: GeneralConfigSchema.default({}),
   llm: LLMConfigSchema.default({}),
+  discord: DiscordConfigSchema.default({}),
 });
 export type Config = z.infer<typeof ConfigSchema>;
 

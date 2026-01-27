@@ -656,3 +656,125 @@ Phase 3: X運用可能化（OAuth 2.0 PKCE + 承認フロー完成）
 ### 関連タスク
 
 agent-browser統合、スキル移植
+
+---
+
+## 2026-01-27 19:26 [REFACTOR] スキルディレクトリ構造を標準化
+
+### 実装内容
+
+- **ディレクトリ構造変更:**
+  - `.claude/skills/agent-browser.md` → `.claude/skills/agent-browser/SKILL.md`
+  - `.claude/references/agent-browser/` → `.claude/skills/agent-browser/references/`
+  - `.claude/examples/agent-browser/` → `.claude/skills/agent-browser/examples/`
+- **CLAUDE.md更新:**
+  - スキル参照パスを新構造に合わせて修正
+  - anthropic-newsスキルも追加
+
+### 成功
+
+- 両スキル（agent-browser, anthropic-news）が同一構造に統一
+- 標準構造: `skills/<name>/SKILL.md` + `references/` + `examples/`
+- GitHubにプッシュ完了
+
+### 学び
+
+- スキルは `skills/<name>/` ディレクトリ内に全ファイルを格納する構造が標準
+- references/とexamples/はスキルディレクトリ内に配置（外部に分散させない）
+- 段階的開示の原則は維持しつつ、物理的なファイル配置は1スキル1ディレクトリ
+
+### 関連タスク
+
+スキル構造標準化
+
+---
+
+## 2026-01-27 19:45 [IMPL] Anthropic News UI実装
+
+### 実装内容
+
+- **新規ファイル作成:**
+  - `.claude/agent-docs/08-news-ui.md` - News UI仕様ドキュメント
+  - `ui/src/ui/news-page.ts` - ニュースページ（タブフィルター、モックデータ内蔵）
+  - `ui/src/ui/news-timeline-item.ts` - タイムラインアイテム（展開/折りたたみ、Xボタン）
+- **既存ファイル変更:**
+  - `ui/src/ui/types.ts` - `NewsSource`, `NewsArticle` 型追加
+  - `ui/src/ui/sidebar-nav.ts` - News ナビ追加（newspaper アイコン）
+  - `ui/src/ui/app-shell.ts` - News ルーティング追加
+  - `.claude/agent-docs/06-ui-design.md` - プラットフォームブランドカラー仕様追加
+- **開発環境:**
+  - prettier インストール、format スクリプト更新（oxfmt → prettier）
+
+### 成功
+
+- News ページ完全動作（タブ切り替え、展開/折りたたみ、View Original）
+- X投稿ボタン配置完了（`post-to-x` イベント発火）
+- プラットフォームカラー統一（X: 黒背景、白アイコン）
+- TypeScript ビルド・lint エラーなし
+
+### 失敗/課題
+
+- `code-simplifier` スキルが存在しないと勘違い → ユーザー訂正で prettier 使用
+- `oxfmt` がインストールされていなかった → prettier に切り替え
+
+### 学び
+
+- プラットフォームブランドカラーはドキュメント化して一貫性を保つ
+- X の公式カラーは `#000000`（背景）+ `#FFFFFF`（アイコン）
+- pnpm workspace では `-w` フラグで root に devDependencies 追加
+- コードは既にきれいだった場合、prettier は `unchanged` を報告
+
+### 関連タスク
+
+Anthropic News UI実装（モックデータ版）
+
+---
+
+## 2026-01-27 20:18 [IMPL] Discord Bot連携を実装
+
+### 実装内容
+
+- **新規ファイル作成:**
+  - `src/discord/types.ts` - Discord固有の型定義（DiscordBotConfig, CommandContext, SlashCommand等）
+  - `src/discord/bot.ts` - DiscordBot class（discord.js Client管理、Slash Commands登録）
+  - `src/discord/commands/index.ts` - コマンド登録
+  - `src/discord/commands/ask.ts` - `/indra ask` LLMに質問
+  - `src/discord/commands/post.ts` - `/indra post` SNS投稿作成
+  - `src/discord/commands/approve.ts` - `/indra approve` 投稿承認
+  - `src/discord/commands/status.ts` - `/indra status` システム状態確認
+  - `src/connectors/discord.ts` - DiscordConnector（sendMessage, sendEmbed）
+  - `src/commands/discord.ts` - CLI `indra discord setup/status/clear/send`
+- **既存ファイル変更:**
+  - `src/connectors/types.ts` - Platform enumに"discord"追加
+  - `src/config/schema.ts` - DiscordConfig追加
+  - `src/auth/credential-store.ts` - Discord認証情報管理追加
+  - `src/gateway/server.ts` - Discord連携メソッド追加（chatForDiscord, createPostForDiscord等）
+  - `src/gateway/entry.ts` - dotenv読み込み、startDiscordBot()呼び出し
+  - `src/cli/entry.ts` - dotenv読み込み、registerDiscordCommand追加
+- **環境設定:**
+  - `.env` - DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID, DISCORD_GUILD_IDS
+  - dotenvパッケージ追加
+
+### 成功
+
+- Discord Bot `Indra#7663` が正常に接続
+- Slash Commands登録完了（/indra ask, post, approve, status）
+- Gateway経由でLLM応答、承認キュー操作が可能
+- code-simplifierでリファクタリング完了（getErrorMessage集約、定数化、重複削除）
+
+### 失敗/課題
+
+- `Used disallowed intents` エラー → MessageContent intentを削除して解決
+- better-sqlite3のネイティブモジュールバージョン不一致 → `pnpm rebuild` で解決
+- グローバルSlash Commandsは反映に最大1時間 → Guild ID指定で即時反映
+
+### 学び
+
+- discord.js v14ではMessage Content IntentがPrivileged（Developer Portalで有効化が必要）
+- Slash Commandsのみ使用する場合は`GatewayIntentBits.Guilds`のみで十分
+- Guild ID指定でSlash Commandsを即座に登録可能（開発時に有用）
+- `getErrorMessage()`のような共通ヘルパーは早めにtypes.tsに集約すべき
+
+### 関連タスク
+
+Discord Bot連携（計画タスクD1-1〜D3-1完了）

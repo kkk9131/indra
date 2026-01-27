@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PlatformSchema = z.enum(["x", "note"]);
+export const PlatformSchema = z.enum(["x", "note", "discord"]);
 export type Platform = z.infer<typeof PlatformSchema>;
 
 export const ConnectorStatusSchema = z.enum([
