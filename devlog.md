@@ -858,3 +858,80 @@ News機能コード整理（code-simplifier使用）
 ### 関連タスク
 
 Discord状態表示、CLI改善、cli-testスキル作成
+
+---
+
+## 2026-01-28 00:16 [DOCS] anthropic-newsスキル拡張 + newsデータ削除
+
+### 実装内容
+
+- **スキルドキュメント更新:**
+  - `.claude/skills/anthropic-news/references/webfetch-guide.md` - agent-browserセクション追加
+    - Anthropic News (`https://www.anthropic.com/news`) の手順
+    - Claude Blog (`https://claude.com/blog`) の手順
+    - 使用ガイドライン（snapshot -i、click遷移の説明）
+- **データ削除:**
+  - `~/.indra/news/` の既存ニュースデータ3件を削除
+
+### 成功
+
+- WebFetchで取得できない場合の代替手段としてagent-browser手順を文書化
+- newsデータをクリーンアップ
+
+### 学び
+
+- ニュースデータはファイルベース（`~/.indra/news/{id}.json`）で保存
+- 大量データ（1000件超）にはSQLite移行が推奨
+- 現状の`list()`は全件読み込み＋メモリソートのため、スケーラビリティに課題
+
+### 関連タスク
+
+anthropic-newsスキル拡張
+
+---
+
+## 2026-01-28 00:45 [IMPL] News ストレージ SQLite 移行
+
+### 実装内容
+
+- **ストレージ移行:**
+  - `src/news/store.ts` - ファイルベース（JSON）から SQLite に完全書き換え
+  - `~/.indra/sessions.db` に `news_articles` テーブル追加
+  - インデックス作成: `fetchedAt DESC`, `contentHash`
+- **インターフェース維持:**
+  - `save(articles)` - INSERT OR REPLACE
+  - `list()` - ORDER BY fetchedAt DESC
+  - `getById(id)` - WHERE id = ?
+  - `hasHash(hash)` - SELECT 1 WHERE contentHash = ?
+- **新規メソッド追加:**
+  - `listBySource(source)` - ソース別取得
+  - `listPaginated(limit, offset)` - ページネーション
+  - `deleteOlderThan(date)` - 古い記事削除
+  - `count()` - 記事総数
+  - `close()` - DB接続クローズ
+- **リファクタリング:**
+  - `rowToArticle()` - Zod に直接 row を渡すよう簡略化
+  - `rowsToArticles()` - map + filter でヘルパー抽出
+  - 各メソッドをメソッドチェーンで統一
+  - 173行 → 139行（-20%削減）
+- **スキル更新:**
+  - `.claude/skills/anthropic-news/SKILL.md` - 今日の記事のみ取得をデフォルト化
+  - `all` オプション追加（全期間取得）
+
+### 成功
+
+- SQLite 移行完了、動作確認OK
+- ConfigManager パターンに準拠
+- 既存インターフェース完全維持（後方互換）
+- ビルドエラーなし
+
+### 学び
+
+- SQLite に統一することで全テーブルが `sessions.db` に集約
+- Zod の `safeParse()` は row オブジェクトをそのまま渡せる
+- `filter((x): x is T => x !== null)` で型安全なフィルタリング
+- 重複パターンはヘルパーメソッドに早めに抽出すべき
+
+### 関連タスク
+
+News ストレージ SQLite 移行、anthropic-news スキル更新
