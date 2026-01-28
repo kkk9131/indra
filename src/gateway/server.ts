@@ -17,11 +17,15 @@ import {
   createEvent,
   type RequestFrame,
 } from "./protocol/index.js";
-import { ApprovalQueue, type ApprovalStatus } from "../approval/index.js";
+import {
+  createHandlerRegistry,
+  type GatewayContext,
+  type RequestHandler,
+} from "./handlers/index.js";
+import { ApprovalQueue } from "../approval/index.js";
 import {
   XConnector,
   type Platform,
-  type Content,
 } from "../connectors/index.js";
 import {
   NewsStore,
@@ -53,8 +57,6 @@ import {
   ScheduleStore,
   TaskRegistry,
   TaskExecutor,
-  type CreateTaskParams,
-  type UpdateTaskParams,
   type TaskExecutionResult,
 } from "../scheduler/index.js";
 import {
@@ -163,6 +165,7 @@ export class GatewayServer {
   private taskRegistry: TaskRegistry;
   private taskExecutor: TaskExecutor;
   private xpostWorkflowService: XPostWorkflowService;
+  private requestHandlers: Map<string, RequestHandler>;
   private port: number;
   private clients: Set<WebSocket> = new Set();
 
@@ -212,6 +215,7 @@ export class GatewayServer {
     this.initDiscordBot();
     this.initAnalytics();
     this.initScheduledTasks();
+    this.requestHandlers = createHandlerRegistry(this.buildHandlerContext());
   }
 
   private initAnalytics(): void {
@@ -465,6 +469,40 @@ export class GatewayServer {
     });
   }
 
+  private buildHandlerContext(): GatewayContext {
+    return {
+      configManager: this.configManager,
+      approvalQueue: this.approvalQueue,
+      credentialStore: this.credentialStore,
+      xConnector: this.xConnector,
+      xOAuth2Handler: this.xOAuth2Handler,
+      discordBot: this.discordBot,
+      isDiscordBotReady: () => this.isDiscordBotReady(),
+      newsStore: this.newsStore,
+      newsScheduler: this.newsScheduler,
+      logStore: this.logStore,
+      analyticsScheduler: this.analyticsScheduler,
+      schedulerManager: this.schedulerManager,
+      createLLMProvider: (config) => this.createLLMProvider(config),
+      broadcast: (event, payload) => this.broadcast(event, payload),
+      sendSuccess,
+      sendError,
+      getErrorMessage,
+      handlers: {
+        handleChatSend: this.handleChatSend.bind(this),
+        handleLLMTest: this.handleLLMTest.bind(this),
+        handleNewsSourceList: this.handleNewsSourceList.bind(this),
+        handleNewsSourceGet: this.handleNewsSourceGet.bind(this),
+        handleNewsSourceCreate: this.handleNewsSourceCreate.bind(this),
+        handleNewsSourceUpdate: this.handleNewsSourceUpdate.bind(this),
+        handleNewsSourceDelete: this.handleNewsSourceDelete.bind(this),
+        handleNewsSourceToggle: this.handleNewsSourceToggle.bind(this),
+        handleNewsSourceFetchNow: this.handleNewsSourceFetchNow.bind(this),
+        handleXpostGenerate: this.handleXpostGenerate.bind(this),
+      },
+    };
+  }
+
   /**
    * Broadcast an event to all connected clients
    */
@@ -483,168 +521,17 @@ export class GatewayServer {
     _sessionId: string,
     frame: RequestFrame,
   ): Promise<void> {
-    switch (frame.method) {
-      case "ping":
-        sendSuccess(ws, frame.id, { pong: Date.now() });
-        break;
-
-      case "chat.send":
-        await this.handleChatSend(ws, frame);
-        break;
-
-      case "config.get":
-        sendSuccess(ws, frame.id, { config: this.configManager.get() });
-        break;
-
-      case "config.set":
-        try {
-          const configUpdate = frame.params as Partial<Config>;
-          this.configManager.set(configUpdate);
-          sendSuccess(ws, frame.id, { config: this.configManager.get() });
-        } catch (error) {
-          sendError(ws, frame.id, "CONFIG_ERROR", getErrorMessage(error));
-        }
-        break;
-
-      case "llm.test":
-        await this.handleLLMTest(ws, frame);
-        break;
-
-      case "post.create":
-        await this.handlePostCreate(ws, frame);
-        break;
-
-      case "post.list":
-        this.handlePostList(ws, frame);
-        break;
-
-      case "post.approve":
-        await this.handlePostApprove(ws, frame);
-        break;
-
-      case "post.reject":
-        this.handlePostReject(ws, frame);
-        break;
-
-      case "post.edit":
-        this.handlePostEdit(ws, frame);
-        break;
-
-      case "auth.x.start":
-        this.handleAuthXStart(ws, frame);
-        break;
-
-      case "auth.x.callback":
-        await this.handleAuthXCallback(ws, frame);
-        break;
-
-      case "auth.x.status":
-        this.handleAuthXStatus(ws, frame);
-        break;
-
-      case "auth.x.logout":
-        this.handleAuthXLogout(ws, frame);
-        break;
-
-      case "auth.discord.status":
-        this.handleAuthDiscordStatus(ws, frame);
-        break;
-
-      case "news.list":
-        this.handleNewsList(ws, frame);
-        break;
-
-      case "news.refresh":
-        await this.handleNewsRefresh(ws, frame);
-        break;
-
-      case "logs.list":
-        this.handleLogsList(ws, frame);
-        break;
-
-      case "logs.refresh":
-        await this.handleLogsRefresh(ws, frame);
-        break;
-
-      case "analytics.runNow":
-        await this.handleAnalyticsRunNow(ws, frame);
-        break;
-
-      // ===== Schedule Handlers =====
-      case "schedule.list":
-        this.handleScheduleList(ws, frame);
-        break;
-
-      case "schedule.get":
-        this.handleScheduleGet(ws, frame);
-        break;
-
-      case "schedule.create":
-        this.handleScheduleCreate(ws, frame);
-        break;
-
-      case "schedule.update":
-        this.handleScheduleUpdate(ws, frame);
-        break;
-
-      case "schedule.delete":
-        this.handleScheduleDelete(ws, frame);
-        break;
-
-      case "schedule.toggle":
-        this.handleScheduleToggle(ws, frame);
-        break;
-
-      case "schedule.runNow":
-        await this.handleScheduleRunNow(ws, frame);
-        break;
-
-      case "schedule.taskTypes":
-        this.handleScheduleTaskTypes(ws, frame);
-        break;
-
-      // ===== NewsSource Handlers =====
-      case "newsSource.list":
-        this.handleNewsSourceList(ws, frame);
-        break;
-
-      case "newsSource.get":
-        this.handleNewsSourceGet(ws, frame);
-        break;
-
-      case "newsSource.create":
-        this.handleNewsSourceCreate(ws, frame);
-        break;
-
-      case "newsSource.update":
-        this.handleNewsSourceUpdate(ws, frame);
-        break;
-
-      case "newsSource.delete":
-        this.handleNewsSourceDelete(ws, frame);
-        break;
-
-      case "newsSource.toggle":
-        this.handleNewsSourceToggle(ws, frame);
-        break;
-
-      case "newsSource.fetchNow":
-        await this.handleNewsSourceFetchNow(ws, frame);
-        break;
-
-      // ===== XPost Handlers =====
-      case "xpost.generate":
-        await this.handleXpostGenerate(ws, frame);
-        break;
-
-      default:
-        sendError(
-          ws,
-          frame.id,
-          "UNKNOWN_METHOD",
-          `Unknown method: ${frame.method}`,
-        );
+    const handler = this.requestHandlers.get(frame.method);
+    if (!handler) {
+      sendError(
+        ws,
+        frame.id,
+        "UNKNOWN_METHOD",
+        `Unknown method: ${frame.method}`,
+      );
+      return;
     }
+    await handler(ws, frame);
   }
 
   start(): Promise<void> {
@@ -812,400 +699,6 @@ export class GatewayServer {
       sendError(ws, frame.id, "LLM_TEST_FAILED", getErrorMessage(error));
     }
   }
-
-  private async handlePostCreate(
-    ws: WebSocket,
-    frame: RequestFrame,
-  ): Promise<void> {
-    try {
-      const { platform, prompt } = frame.params as {
-        platform: Platform;
-        prompt: string;
-      };
-      const config = this.configManager.get();
-      const provider = this.createLLMProvider(config.llm);
-
-      const systemPrompt = `You are a social media content creator. Generate a concise, engaging post for ${platform}.
-Keep it under 280 characters. Be creative and natural. Output ONLY the post text, no explanations.`;
-
-      const generatedText = await provider.chat(
-        [{ role: "user", content: prompt }],
-        { systemPrompt },
-      );
-      const item = this.approvalQueue.create({
-        platform,
-        content: { text: generatedText.slice(0, 280) },
-        prompt,
-      });
-
-      sendSuccess(ws, frame.id, { item });
-
-      // Broadcast to all clients
-      this.broadcast("post.created", { item });
-    } catch (error) {
-      sendError(ws, frame.id, "POST_CREATE_ERROR", getErrorMessage(error));
-    }
-  }
-
-  private handlePostList(ws: WebSocket, frame: RequestFrame): void {
-    const params = frame.params as { status?: ApprovalStatus } | undefined;
-    sendSuccess(ws, frame.id, {
-      items: this.approvalQueue.list(params?.status),
-    });
-  }
-
-  private async handlePostApprove(
-    ws: WebSocket,
-    frame: RequestFrame,
-  ): Promise<void> {
-    const { id } = frame.params as { id: string };
-
-    const item = this.approvalQueue.approve(id);
-    if (!item) {
-      sendError(ws, frame.id, "NOT_FOUND", `Item not found: ${id}`);
-      return;
-    }
-
-    if (item.platform !== "x") {
-      sendError(
-        ws,
-        frame.id,
-        "UNSUPPORTED_PLATFORM",
-        `Platform not yet supported: ${item.platform}`,
-      );
-      return;
-    }
-
-    // Check for OAuth2 credentials first
-    const xCreds = this.credentialStore.getXCredentials();
-    let connector: XConnector;
-
-    if (xCreds && !this.credentialStore.isXTokenExpired()) {
-      // Use OAuth2 token
-      connector = new XConnector({ oauth2AccessToken: xCreds.accessToken });
-    } else if (this.xConnector) {
-      // Fall back to OAuth 1.0a
-      connector = this.xConnector;
-    } else {
-      const failedItem = this.approvalQueue.markFailed(
-        id,
-        "X connector not configured",
-      );
-      this.broadcast("post.updated", { item: failedItem });
-      sendError(
-        ws,
-        frame.id,
-        "CONNECTOR_NOT_CONFIGURED",
-        "X connector not configured. Authenticate via OAuth 2.0 or set OAuth 1.0a environment variables.",
-      );
-      return;
-    }
-
-    try {
-      await connector.connect();
-      const result = await connector.post(item.content);
-
-      if (result.success && result.postId && result.url) {
-        const postedItem = this.approvalQueue.markPosted(
-          id,
-          result.postId,
-          result.url,
-        );
-        sendSuccess(ws, frame.id, { item: postedItem });
-        this.broadcast("post.updated", { item: postedItem });
-      } else {
-        const failedItem = this.approvalQueue.markFailed(
-          id,
-          result.error ?? "Unknown error",
-        );
-        this.broadcast("post.updated", { item: failedItem });
-        sendError(
-          ws,
-          frame.id,
-          "POST_FAILED",
-          result.error ?? "Failed to post",
-        );
-      }
-    } catch (error) {
-      const failedItem = this.approvalQueue.markFailed(
-        id,
-        getErrorMessage(error),
-      );
-      this.broadcast("post.updated", { item: failedItem });
-      sendError(ws, frame.id, "POST_ERROR", getErrorMessage(error));
-    }
-  }
-
-  private handlePostReject(ws: WebSocket, frame: RequestFrame): void {
-    const { id } = frame.params as { id: string };
-    const item = this.approvalQueue.reject(id);
-
-    if (!item) {
-      sendError(ws, frame.id, "NOT_FOUND", `Item not found: ${id}`);
-      return;
-    }
-
-    sendSuccess(ws, frame.id, { item });
-    this.broadcast("post.updated", { item });
-  }
-
-  private handlePostEdit(ws: WebSocket, frame: RequestFrame): void {
-    const { id, content } = frame.params as { id: string; content: Content };
-    const item = this.approvalQueue.update(id, { content });
-
-    if (!item) {
-      sendError(ws, frame.id, "NOT_FOUND", `Item not found: ${id}`);
-      return;
-    }
-
-    sendSuccess(ws, frame.id, { item });
-    this.broadcast("post.updated", { item });
-  }
-
-  // ===== Auth Handlers =====
-
-  private handleAuthXStart(ws: WebSocket, frame: RequestFrame): void {
-    if (!this.xOAuth2Handler) {
-      sendError(
-        ws,
-        frame.id,
-        "OAUTH_NOT_CONFIGURED",
-        "X OAuth 2.0 not configured. Set X_CLIENT_ID environment variable.",
-      );
-      return;
-    }
-
-    const { url, state } = this.xOAuth2Handler.generateAuthUrl();
-    sendSuccess(ws, frame.id, { url, state });
-  }
-
-  private async handleAuthXCallback(
-    ws: WebSocket,
-    frame: RequestFrame,
-  ): Promise<void> {
-    if (!this.xOAuth2Handler) {
-      sendError(
-        ws,
-        frame.id,
-        "OAUTH_NOT_CONFIGURED",
-        "X OAuth 2.0 not configured.",
-      );
-      return;
-    }
-
-    const { code, state } = frame.params as { code: string; state: string };
-
-    try {
-      const tokens = await this.xOAuth2Handler.handleCallback(code, state);
-
-      // Fetch user info to get username
-      let username: string | undefined;
-      try {
-        const userResponse = await fetch("https://api.twitter.com/2/users/me", {
-          headers: {
-            Authorization: `Bearer ${tokens.accessToken}`,
-          },
-        });
-        if (userResponse.ok) {
-          const userData = (await userResponse.json()) as {
-            data: { username: string };
-          };
-          username = userData.data.username;
-        }
-      } catch {
-        // Ignore user fetch error
-      }
-
-      this.credentialStore.setXCredentials(tokens, username);
-      sendSuccess(ws, frame.id, { success: true, username });
-    } catch (error) {
-      sendError(ws, frame.id, "AUTH_CALLBACK_ERROR", getErrorMessage(error));
-    }
-  }
-
-  private handleAuthXStatus(ws: WebSocket, frame: RequestFrame): void {
-    const creds = this.credentialStore.getXCredentials();
-    const authenticated = this.credentialStore.isXAuthenticated();
-    const expired = this.credentialStore.isXTokenExpired();
-
-    sendSuccess(ws, frame.id, {
-      authenticated,
-      expired,
-      username: creds?.username,
-      oauth2Configured: !!this.xOAuth2Handler,
-      oauth1Configured: !!this.xConnector,
-    });
-  }
-
-  private handleAuthXLogout(ws: WebSocket, frame: RequestFrame): void {
-    this.credentialStore.clearXCredentials();
-    sendSuccess(ws, frame.id, { success: true });
-  }
-
-  private handleAuthDiscordStatus(ws: WebSocket, frame: RequestFrame): void {
-    const status = {
-      connected: this.isDiscordBotReady(),
-      configured: !!this.discordBot,
-      botName: this.discordBot?.getBotName() ?? null,
-    };
-    sendSuccess(ws, frame.id, status);
-  }
-
-  // ===== News Handlers =====
-
-  private handleNewsList(ws: WebSocket, frame: RequestFrame): void {
-    const articles = this.newsStore.list();
-    sendSuccess(ws, frame.id, { articles });
-  }
-
-  private handleNewsRefresh(ws: WebSocket, frame: RequestFrame): void {
-    console.log("[Gateway] handleNewsRefresh called");
-
-    // 即座に「開始しました」を返す
-    sendSuccess(ws, frame.id, { status: "started" });
-
-    // バックグラウンドで実行（awaitしない）
-    console.log("[Gateway] Starting newsScheduler.run()");
-    this.newsScheduler.run().catch((error) => {
-      console.error("[Gateway] News refresh failed:", error);
-    });
-  }
-
-  // ===== Log Handlers =====
-
-  private handleLogsList(ws: WebSocket, frame: RequestFrame): void {
-    const logs = this.logStore.list();
-    sendSuccess(ws, frame.id, { logs });
-  }
-
-  private async handleLogsRefresh(
-    ws: WebSocket,
-    frame: RequestFrame,
-  ): Promise<void> {
-    try {
-      const logs = this.logStore.list();
-      sendSuccess(ws, frame.id, { logs });
-    } catch (error) {
-      sendError(ws, frame.id, "LOGS_REFRESH_ERROR", getErrorMessage(error));
-    }
-  }
-
-  // ===== Analytics Handlers =====
-
-  private async handleAnalyticsRunNow(
-    ws: WebSocket,
-    frame: RequestFrame,
-  ): Promise<void> {
-    if (!this.analyticsScheduler) {
-      sendError(
-        ws,
-        frame.id,
-        "ANALYTICS_NOT_CONFIGURED",
-        "Analytics not configured. Set ZAI_API_KEY environment variable.",
-      );
-      return;
-    }
-
-    try {
-      sendSuccess(ws, frame.id, { status: "started" });
-
-      // バックグラウンドで実行
-      this.analyticsScheduler.run().catch((error) => {
-        console.error("[Gateway] Analytics run failed:", error);
-      });
-    } catch (error) {
-      sendError(ws, frame.id, "ANALYTICS_ERROR", getErrorMessage(error));
-    }
-  }
-
-  // ===== Schedule Handlers =====
-
-  private handleScheduleList(ws: WebSocket, frame: RequestFrame): void {
-    const tasks = this.schedulerManager.list();
-    sendSuccess(ws, frame.id, { tasks });
-  }
-
-  private handleScheduleGet(ws: WebSocket, frame: RequestFrame): void {
-    const { id } = frame.params as { id: string };
-    const task = this.schedulerManager.get(id);
-    if (!task) {
-      sendError(ws, frame.id, "NOT_FOUND", `Task not found: ${id}`);
-      return;
-    }
-    sendSuccess(ws, frame.id, { task });
-  }
-
-  private handleScheduleCreate(ws: WebSocket, frame: RequestFrame): void {
-    try {
-      const params = frame.params as CreateTaskParams;
-      const task = this.schedulerManager.create(params);
-      sendSuccess(ws, frame.id, { task });
-    } catch (error) {
-      sendError(ws, frame.id, "CREATE_ERROR", getErrorMessage(error));
-    }
-  }
-
-  private handleScheduleUpdate(ws: WebSocket, frame: RequestFrame): void {
-    try {
-      const { id, ...params } = frame.params as {
-        id: string;
-      } & UpdateTaskParams;
-      const task = this.schedulerManager.update(id, params);
-      if (!task) {
-        sendError(ws, frame.id, "NOT_FOUND", `Task not found: ${id}`);
-        return;
-      }
-      sendSuccess(ws, frame.id, { task });
-    } catch (error) {
-      sendError(ws, frame.id, "UPDATE_ERROR", getErrorMessage(error));
-    }
-  }
-
-  private handleScheduleDelete(ws: WebSocket, frame: RequestFrame): void {
-    const { id } = frame.params as { id: string };
-    const deleted = this.schedulerManager.delete(id);
-    if (!deleted) {
-      sendError(ws, frame.id, "NOT_FOUND", `Task not found: ${id}`);
-      return;
-    }
-    sendSuccess(ws, frame.id, { deleted: true });
-  }
-
-  private handleScheduleToggle(ws: WebSocket, frame: RequestFrame): void {
-    const { id, enabled } = frame.params as { id: string; enabled: boolean };
-    const task = this.schedulerManager.toggle(id, enabled);
-    if (!task) {
-      sendError(ws, frame.id, "NOT_FOUND", `Task not found: ${id}`);
-      return;
-    }
-    sendSuccess(ws, frame.id, { task });
-  }
-
-  private async handleScheduleRunNow(
-    ws: WebSocket,
-    frame: RequestFrame,
-  ): Promise<void> {
-    const { id } = frame.params as { id: string };
-
-    // 即座に「開始しました」を返す
-    sendSuccess(ws, frame.id, { status: "started" });
-
-    // バックグラウンドで実行
-    this.schedulerManager.runNow(id).catch((error) => {
-      console.error(`[Gateway] Schedule runNow failed for ${id}:`, error);
-    });
-  }
-
-  private handleScheduleTaskTypes(ws: WebSocket, frame: RequestFrame): void {
-    const taskTypes = this.schedulerManager.taskTypes().map((def) => ({
-      type: def.type,
-      name: def.name,
-      description: def.description,
-      defaultCron: def.defaultCron,
-    }));
-    sendSuccess(ws, frame.id, { taskTypes });
-  }
-
   // ===== NewsSource Handlers =====
 
   private handleNewsSourceList(ws: WebSocket, frame: RequestFrame): void {

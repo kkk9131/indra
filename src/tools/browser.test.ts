@@ -1,4 +1,4 @@
-import { describe, expect, it, afterAll } from "vitest";
+import { describe, expect, it, afterAll, beforeAll } from "vitest";
 import {
   browserOpen,
   browserSnapshot,
@@ -7,7 +7,20 @@ import {
   browserScreenshot,
 } from "./browser.js";
 
-describe("browser tools", () => {
+const shouldRun = process.env.AGENT_BROWSER_TESTS === "true";
+const describeBrowser = shouldRun ? describe : describe.skip;
+
+describeBrowser("browser tools", () => {
+  beforeAll(() => {
+    const openResult = browserOpen("https://example.com", { session: "test" });
+    if (!openResult.success) {
+      throw new Error(
+        openResult.error ??
+          "agent-browser is not available (set AGENT_BROWSER_TESTS=true to run)",
+      );
+    }
+  });
+
   afterAll(() => {
     browserClose({ session: "test" });
   });
