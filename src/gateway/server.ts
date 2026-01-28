@@ -33,12 +33,20 @@ import { DiscordBot, commands as discordCommands } from "../discord/index.js";
 import { LogStore, LogCollector, type AgentActionType } from "../logs/index.js";
 import type { ApprovalItem } from "../approval/types.js";
 import {
-  LogAnalyzer,
   AnalyticsScheduler,
   createReportEmbed,
   type DailyReport,
 } from "../analytics/index.js";
 import type { NewsArticle } from "../news/types.js";
+import {
+  SchedulerManager,
+  ScheduleStore,
+  TaskRegistry,
+  TaskExecutor,
+  type CreateTaskParams,
+  type UpdateTaskParams,
+  type TaskExecutionResult,
+} from "../scheduler/index.js";
 
 interface AgentLogParams {
   tool?: string;
@@ -93,8 +101,11 @@ export class GatewayServer {
   private newsScheduler: NewsScheduler;
   private logStore: LogStore;
   private logCollector: LogCollector;
-  private logAnalyzer: LogAnalyzer | null = null;
   private analyticsScheduler: AnalyticsScheduler | null = null;
+  private schedulerManager: SchedulerManager;
+  private scheduleStore: ScheduleStore;
+  private taskRegistry: TaskRegistry;
+  private taskExecutor: TaskExecutor;
   private port: number;
   private clients: Set<WebSocket> = new Set();
 
@@ -119,32 +130,100 @@ export class GatewayServer {
       maxLength: 5000,
     });
 
+    // スケジューラーを初期化
+    this.scheduleStore = new ScheduleStore();
+    this.taskRegistry = new TaskRegistry();
+    this.taskExecutor = new TaskExecutor(
+      this.taskRegistry,
+      this.scheduleStore,
+      (result) => this.handleTaskExecuted(result),
+    );
+    this.schedulerManager = new SchedulerManager(
+      this.scheduleStore,
+      this.taskRegistry,
+      this.taskExecutor,
+      (task) => this.broadcast("schedule.updated", { task }),
+    );
+
     this.setupRoutes();
     this.setupWebSocket();
     this.initConnectors();
     this.initOAuth2();
     this.initDiscordBot();
     this.initAnalytics();
-    this.newsScheduler.start();
+    this.initScheduledTasks();
   }
 
   private initAnalytics(): void {
     // ZAI_API_KEY がない場合はスキップ
+    console.log(
+      "initAnalytics: ZAI_API_KEY =",
+      process.env.ZAI_API_KEY ? "set" : "not set",
+    );
     if (!process.env.ZAI_API_KEY) {
       console.log("AnalyticsScheduler: Skipped (ZAI_API_KEY not set)");
       return;
     }
 
     try {
-      this.logAnalyzer = new LogAnalyzer(this.logStore);
-      this.analyticsScheduler = new AnalyticsScheduler(
-        this.logAnalyzer,
-        (report, article) => this.handleReportGenerated(report, article),
+      this.analyticsScheduler = new AnalyticsScheduler((report, article) =>
+        this.handleReportGenerated(report, article),
       );
-      this.analyticsScheduler.start();
+      console.log("AnalyticsScheduler: Initialized successfully");
+      // AnalyticsSchedulerの固定cronは使わず、SchedulerManagerで管理
     } catch (error) {
       console.error("Failed to initialize analytics:", error);
     }
+  }
+
+  private initScheduledTasks(): void {
+    // タスク定義を登録
+    this.schedulerManager.registerTaskType({
+      type: "news",
+      name: "ニュース取得",
+      description: "Anthropic News を取得",
+      execute: () => this.newsScheduler.run(),
+      defaultCron: "0 6 * * *",
+    });
+
+    if (this.analyticsScheduler) {
+      this.schedulerManager.registerTaskType({
+        type: "analytics",
+        name: "ログ分析",
+        description: "日次ログ分析レポートを生成",
+        execute: () => this.analyticsScheduler!.run().then(() => {}),
+        defaultCron: "0 5 * * *",
+      });
+    }
+
+    // デフォルトタスクを登録（存在しない場合のみ）
+    this.schedulerManager.ensureDefaultTask(
+      "news",
+      "ニュース取得",
+      "毎朝6時にAnthropic Newsを取得",
+      "0 6 * * *",
+    );
+
+    if (this.analyticsScheduler) {
+      this.schedulerManager.ensureDefaultTask(
+        "analytics",
+        "ログ分析",
+        "毎朝5時に日次ログ分析レポートを生成",
+        "0 5 * * *",
+      );
+    }
+
+    // スケジューラーを開始
+    this.schedulerManager.start();
+    console.log("SchedulerManager: Initialized and started");
+  }
+
+  private handleTaskExecuted(result: TaskExecutionResult): void {
+    this.broadcast("schedule.executed", {
+      id: result.taskId,
+      success: result.success,
+      error: result.error,
+    });
   }
 
   private async handleReportGenerated(
@@ -250,6 +329,8 @@ export class GatewayServer {
       params.text,
     );
     this.logStore.save(logEntry);
+    // ブロードキャストを追加
+    this.broadcast("logs.updated", { log: logEntry });
   }
 
   private createLLMProvider(config: Config["llm"]): LLMProvider {
@@ -416,6 +497,39 @@ export class GatewayServer {
 
       case "analytics.runNow":
         await this.handleAnalyticsRunNow(ws, frame);
+        break;
+
+      // ===== Schedule Handlers =====
+      case "schedule.list":
+        this.handleScheduleList(ws, frame);
+        break;
+
+      case "schedule.get":
+        this.handleScheduleGet(ws, frame);
+        break;
+
+      case "schedule.create":
+        this.handleScheduleCreate(ws, frame);
+        break;
+
+      case "schedule.update":
+        this.handleScheduleUpdate(ws, frame);
+        break;
+
+      case "schedule.delete":
+        this.handleScheduleDelete(ws, frame);
+        break;
+
+      case "schedule.toggle":
+        this.handleScheduleToggle(ws, frame);
+        break;
+
+      case "schedule.runNow":
+        await this.handleScheduleRunNow(ws, frame);
+        break;
+
+      case "schedule.taskTypes":
+        this.handleScheduleTaskTypes(ws, frame);
         break;
 
       default:
@@ -899,6 +1013,94 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
     }
   }
 
+  // ===== Schedule Handlers =====
+
+  private handleScheduleList(ws: WebSocket, frame: RequestFrame): void {
+    const tasks = this.schedulerManager.list();
+    sendSuccess(ws, frame.id, { tasks });
+  }
+
+  private handleScheduleGet(ws: WebSocket, frame: RequestFrame): void {
+    const { id } = frame.params as { id: string };
+    const task = this.schedulerManager.get(id);
+    if (!task) {
+      sendError(ws, frame.id, "NOT_FOUND", `Task not found: ${id}`);
+      return;
+    }
+    sendSuccess(ws, frame.id, { task });
+  }
+
+  private handleScheduleCreate(ws: WebSocket, frame: RequestFrame): void {
+    try {
+      const params = frame.params as CreateTaskParams;
+      const task = this.schedulerManager.create(params);
+      sendSuccess(ws, frame.id, { task });
+    } catch (error) {
+      sendError(ws, frame.id, "CREATE_ERROR", getErrorMessage(error));
+    }
+  }
+
+  private handleScheduleUpdate(ws: WebSocket, frame: RequestFrame): void {
+    try {
+      const { id, ...params } = frame.params as {
+        id: string;
+      } & UpdateTaskParams;
+      const task = this.schedulerManager.update(id, params);
+      if (!task) {
+        sendError(ws, frame.id, "NOT_FOUND", `Task not found: ${id}`);
+        return;
+      }
+      sendSuccess(ws, frame.id, { task });
+    } catch (error) {
+      sendError(ws, frame.id, "UPDATE_ERROR", getErrorMessage(error));
+    }
+  }
+
+  private handleScheduleDelete(ws: WebSocket, frame: RequestFrame): void {
+    const { id } = frame.params as { id: string };
+    const deleted = this.schedulerManager.delete(id);
+    if (!deleted) {
+      sendError(ws, frame.id, "NOT_FOUND", `Task not found: ${id}`);
+      return;
+    }
+    sendSuccess(ws, frame.id, { deleted: true });
+  }
+
+  private handleScheduleToggle(ws: WebSocket, frame: RequestFrame): void {
+    const { id, enabled } = frame.params as { id: string; enabled: boolean };
+    const task = this.schedulerManager.toggle(id, enabled);
+    if (!task) {
+      sendError(ws, frame.id, "NOT_FOUND", `Task not found: ${id}`);
+      return;
+    }
+    sendSuccess(ws, frame.id, { task });
+  }
+
+  private async handleScheduleRunNow(
+    ws: WebSocket,
+    frame: RequestFrame,
+  ): Promise<void> {
+    const { id } = frame.params as { id: string };
+
+    // 即座に「開始しました」を返す
+    sendSuccess(ws, frame.id, { status: "started" });
+
+    // バックグラウンドで実行
+    this.schedulerManager.runNow(id).catch((error) => {
+      console.error(`[Gateway] Schedule runNow failed for ${id}:`, error);
+    });
+  }
+
+  private handleScheduleTaskTypes(ws: WebSocket, frame: RequestFrame): void {
+    const taskTypes = this.schedulerManager.taskTypes().map((def) => ({
+      type: def.type,
+      name: def.name,
+      description: def.description,
+      defaultCron: def.defaultCron,
+    }));
+    sendSuccess(ws, frame.id, { taskTypes });
+  }
+
   // ===== Discord Integration Methods =====
 
   async chatForDiscord(prompt: string): Promise<string> {
@@ -1023,8 +1225,8 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
   }
 
   stop(): void {
-    this.newsScheduler.stop();
-    this.analyticsScheduler?.stop();
+    this.schedulerManager.stop();
+    this.scheduleStore.close();
     this.wss.close();
     this.httpServer.close();
     this.sessionManager.close();

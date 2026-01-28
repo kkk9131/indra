@@ -249,7 +249,18 @@ export class LogPageElement extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this.loadLogs();
+    wsClient.addEventListener("logs.updated", this.handleLogsUpdated);
   }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    wsClient.removeEventListener("logs.updated", this.handleLogsUpdated);
+  }
+
+  private handleLogsUpdated = (event: Event): void => {
+    const customEvent = event as CustomEvent<{ log: LogEntry }>;
+    this.logs = [...this.logs, customEvent.detail.log];
+  };
 
   private async loadLogs(): Promise<void> {
     if (!wsClient.isConnected) {

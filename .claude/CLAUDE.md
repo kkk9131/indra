@@ -62,9 +62,20 @@ pnpm lint             # リント
 - フェーズ計画: `.claude/agent-docs/04-phases.md`
 - UIデザイン: `.claude/agent-docs/06-ui-design.md`
 - ブラウザ自動化: `.claude/agent-docs/07-browser-automation.md`
+- Xアルゴリズム: `.claude/agent-docs/09-x-algorithm.md`
+- Xアカウント情報: `.claude/agent-docs/10-x-account.md`
 
 ## Skills
 
 - agent-browser: `.claude/skills/agent-browser/`
 - anthropic-news-fetch: `.claude/skills/anthropic-news-fetch/`
 - anthropic-news-summarize: `.claude/skills/anthropic-news-summarize/`
+- log-read: `.claude/skills/log-read/`
+- log-analyze: `.claude/skills/log-analyze/`
+- glm-analyze: `.claude/skills/glm-analyze/`
+- report-generate: `.claude/skills/report-generate/`
+
+## Subagents
+
+- analysis-agent: `.claude/subagents/analysis-agent.md`
+- report-agent: `.claude/subagents/report-agent.md`

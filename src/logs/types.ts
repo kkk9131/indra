@@ -16,21 +16,21 @@ export interface LogEntry {
   id: string;
   type: LogType;
   timestamp: string;
-  sessionId?: string;
+  sessionId?: string | null;
   // agent log
-  agentAction?: AgentActionType;
-  tool?: string;
-  toolInput?: unknown;
-  toolResult?: string;
-  turnNumber?: number;
-  text?: string;
+  agentAction?: AgentActionType | null;
+  tool?: string | null;
+  toolInput?: unknown | null;
+  toolResult?: string | null;
+  turnNumber?: number | null;
+  text?: string | null;
   // prompt log
-  prompt?: string;
-  response?: string;
-  model?: string;
+  prompt?: string | null;
+  response?: string | null;
+  model?: string | null;
   // system log
-  level?: "info" | "warn" | "error";
-  message?: string;
+  level?: "info" | "warn" | "error" | null;
+  message?: string | null;
 }
 
 /** LogEntry Zod schema */
@@ -38,20 +38,21 @@ export const LogEntrySchema = z.object({
   id: z.string(),
   type: z.enum(["agent", "prompt", "system"]),
   timestamp: z.string(),
-  sessionId: z.string().optional(),
+  sessionId: z.string().nullable().optional(),
   agentAction: z
     .enum(["text", "tool_start", "tool_result", "turn_complete", "done"])
+    .nullable()
     .optional(),
-  tool: z.string().optional(),
-  toolInput: z.any().optional(),
-  toolResult: z.string().optional(),
-  turnNumber: z.number().optional(),
-  text: z.string().optional(),
-  prompt: z.string().optional(),
-  response: z.string().optional(),
-  model: z.string().optional(),
-  level: z.enum(["info", "warn", "error"]).optional(),
-  message: z.string().optional(),
+  tool: z.string().nullable().optional(),
+  toolInput: z.any().nullable().optional(),
+  toolResult: z.string().nullable().optional(),
+  turnNumber: z.number().nullable().optional(),
+  text: z.string().nullable().optional(),
+  prompt: z.string().nullable().optional(),
+  response: z.string().nullable().optional(),
+  model: z.string().nullable().optional(),
+  level: z.enum(["info", "warn", "error"]).nullable().optional(),
+  message: z.string().nullable().optional(),
 });
 
 /** LogEntry array Zod schema */

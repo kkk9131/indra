@@ -20,7 +20,7 @@ export interface NewsArticle {
   /** 取得日時 ISO 8601 */
   fetchedAt: string;
   /** コンテンツハッシュ（変更検知用） */
-  contentHash?: string;
+  contentHash?: string | null;
   /** 記事本文（取得できない場合はnull） */
   body: string | null;
   /** サムネイル画像URL（取得できない場合はnull） */
@@ -33,10 +33,10 @@ export const NewsArticleSchema = z.object({
   source: z.enum(["claude-code", "blog", "log-analysis"]),
   title: z.string(),
   summary: z.string().nullable(),
-  url: z.string().url(),
+  url: z.string(), // #report/... 形式も許容
   publishedAt: z.string().nullable(),
   fetchedAt: z.string(),
-  contentHash: z.string().optional(),
+  contentHash: z.string().nullable().optional(),
   body: z.string().nullable(),
   imageUrl: z.string().nullable(),
 });
