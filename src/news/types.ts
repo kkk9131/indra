@@ -1,39 +1,65 @@
 import { z } from "zod";
 
-/** ニュースソースの種類 */
-export type NewsSource = "claude-code" | "blog" | "log-analysis";
+export type NewsSource = "claude-code" | "blog" | "log-analysis" | "x-account";
+export type NewsSourceType = "x-account" | "rss" | "web";
 
-/** ニュース記事 */
-export interface NewsArticle {
-  /** 一意識別子 */
+export interface XAccountConfig {
+  handle: string;
+  maxTweets?: number;
+  hoursBack?: number;
+  includeRetweets?: boolean;
+  includeReplies?: boolean;
+}
+
+export interface NewsSourceDefinition {
   id: string;
-  /** ソース種別 */
+  name: string;
+  sourceType: NewsSourceType;
+  sourceConfig: XAccountConfig | Record<string, unknown>;
+  enabled: boolean;
+  lastFetchedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const XAccountConfigSchema = z.object({
+  handle: z.string(),
+  maxTweets: z.number().optional(),
+  hoursBack: z.number().optional(),
+  includeRetweets: z.boolean().optional(),
+  includeReplies: z.boolean().optional(),
+});
+
+export const NewsSourceDefinitionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  sourceType: z.enum(["x-account", "rss", "web"]),
+  sourceConfig: z.union([XAccountConfigSchema, z.record(z.unknown())]),
+  enabled: z.boolean(),
+  lastFetchedAt: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export interface NewsArticle {
+  id: string;
   source: NewsSource;
-  /** 記事タイトル */
   title: string;
-  /** 要約（取得できない場合はnull） */
   summary: string | null;
-  /** 記事URL */
   url: string;
-  /** 公開日時 ISO 8601（不明な場合はnull） */
   publishedAt: string | null;
-  /** 取得日時 ISO 8601 */
   fetchedAt: string;
-  /** コンテンツハッシュ（変更検知用） */
   contentHash?: string | null;
-  /** 記事本文（取得できない場合はnull） */
   body: string | null;
-  /** サムネイル画像URL（取得できない場合はnull） */
   imageUrl: string | null;
 }
 
-/** NewsArticleのZodスキーマ */
 export const NewsArticleSchema = z.object({
   id: z.string(),
-  source: z.enum(["claude-code", "blog", "log-analysis"]),
+  source: z.enum(["claude-code", "blog", "log-analysis", "x-account"]),
   title: z.string(),
   summary: z.string().nullable(),
-  url: z.string(), // #report/... 形式も許容
+  url: z.string(),
   publishedAt: z.string().nullable(),
   fetchedAt: z.string(),
   contentHash: z.string().nullable().optional(),
@@ -41,5 +67,4 @@ export const NewsArticleSchema = z.object({
   imageUrl: z.string().nullable(),
 });
 
-/** NewsArticle配列のZodスキーマ */
 export const NewsArticlesSchema = z.array(NewsArticleSchema);

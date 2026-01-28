@@ -70,12 +70,20 @@ pnpm lint             # リント
 - agent-browser: `.claude/skills/agent-browser/`
 - anthropic-news-fetch: `.claude/skills/anthropic-news-fetch/`
 - anthropic-news-summarize: `.claude/skills/anthropic-news-summarize/`
+- x-account-fetch: `.claude/skills/x-account-fetch/`
 - log-read: `.claude/skills/log-read/`
 - log-analyze: `.claude/skills/log-analyze/`
 - glm-analyze: `.claude/skills/glm-analyze/`
 - report-generate: `.claude/skills/report-generate/`
+- news-content-fetch: `.claude/skills/news-content-fetch/`
+- x-post-structure: `.claude/skills/x-post-structure/`
+- x-post-compose: `.claude/skills/x-post-compose/`
+- x-algorithm-evaluate: `.claude/skills/x-algorithm-evaluate/`
+- x-post-refine: `.claude/skills/x-post-refine/`
 
 ## Subagents
 
 - analysis-agent: `.claude/subagents/analysis-agent.md`
 - report-agent: `.claude/subagents/report-agent.md`
+- x-post-creator: `.claude/subagents/x-post-creator.md`
+- x-post-evaluator: `.claude/subagents/x-post-evaluator.md`

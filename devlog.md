@@ -1034,3 +1034,49 @@ News ストレージ SQLite 移行、anthropic-news スキル更新
 ### 関連タスク
 
 News機能タイムアウト修正
+
+---
+
+## 2026-01-29 01:08 [IMPL] ニュース取得先拡張機能（Xアカウント対応）
+
+### 実装内容
+
+- **Phase 1: データ層:**
+  - `src/news/types.ts` - `NewsSourceType`, `XAccountConfig`, `NewsSourceDefinition` 型追加
+  - `src/news/source-store.ts` - NewsSourceStore新規作成（SQLite CRUD）
+  - `src/news/x-fetcher.ts` - Xフェッチャー新規作成（プレースホルダー実装）
+- **Phase 2: WebSocketハンドラー:**
+  - `src/gateway/server.ts` - `newsSource.*` ハンドラー7種追加
+    - list, get, create, update, delete, toggle, fetchNow
+  - `executeNewsSourceFetch()` メソッドでソース種別ごとのフェッチ処理
+- **Phase 3: UI実装:**
+  - `ui/src/ui/settings-page.ts` - "Sources" タブ追加
+    - ソース一覧（カード形式）、追加/編集フォーム
+    - Xアカウント設定: ハンドル、最大取得件数、直近○時間、RT/リプライ含有
+    - Enable/Disableトグル、即時フェッチボタン
+- **Phase 4: スキル・フェッチャー:**
+  - `.claude/skills/x-account-fetch/SKILL.md` - スキル定義新規作成
+  - `filterTweetsByTime()`, `filterTweetsByType()` フィルタリング関数追加
+
+### 成功
+
+- 4フェーズすべて完了
+- ScheduleStoreパターンを踏襲した一貫した設計
+- code-simplifierで自動リファクタリング完了
+  - `showSuccess`/`showError`メソッド統合
+  - `buildXAccountConfig`で重複排除
+  - JSDocコメント削除・簡素化
+- ビルド・lint・テスト全てパス
+
+### 学び
+
+- 既存パターン（ScheduleStore, Cronタブ）を踏襲すると実装が効率的
+- `hoursBack` フィルタは0で無制限、正数で時間制限と設計
+- プレースホルダー実装でも型とインターフェースを完成させておくと後から実装しやすい
+- code-simplifierは重複コードの検出・統合に有効
+
+### 次のステップ
+
+- agent-browserスキルとの統合でX実際フェッチ実装
+- RSS/Webソース対応
+- スケジューラーとの連携（定期フェッチ）

@@ -23,7 +23,17 @@ import {
   type Platform,
   type Content,
 } from "../connectors/index.js";
-import { NewsStore, NewsScheduler } from "../news/index.js";
+import {
+  NewsStore,
+  NewsScheduler,
+  NewsSourceStore,
+  fetchXAccount,
+  tweetToArticle,
+  type NewsSourceDefinition,
+  type CreateNewsSourceParams,
+  type UpdateNewsSourceParams,
+  type XAccountConfig,
+} from "../news/index.js";
 import {
   XOAuth2Handler,
   getCredentialStore,
@@ -98,6 +108,7 @@ export class GatewayServer {
   private credentialStore: CredentialStore;
   private discordBot: DiscordBot | null = null;
   private newsStore: NewsStore;
+  private newsSourceStore: NewsSourceStore;
   private newsScheduler: NewsScheduler;
   private logStore: LogStore;
   private logCollector: LogCollector;
@@ -120,6 +131,7 @@ export class GatewayServer {
     this.credentialStore = getCredentialStore();
 
     this.newsStore = new NewsStore();
+    this.newsSourceStore = new NewsSourceStore();
     this.newsScheduler = new NewsScheduler(this.newsStore, (articles) => {
       this.broadcast("news.updated", { articles });
     });
@@ -530,6 +542,35 @@ export class GatewayServer {
 
       case "schedule.taskTypes":
         this.handleScheduleTaskTypes(ws, frame);
+        break;
+
+      // ===== NewsSource Handlers =====
+      case "newsSource.list":
+        this.handleNewsSourceList(ws, frame);
+        break;
+
+      case "newsSource.get":
+        this.handleNewsSourceGet(ws, frame);
+        break;
+
+      case "newsSource.create":
+        this.handleNewsSourceCreate(ws, frame);
+        break;
+
+      case "newsSource.update":
+        this.handleNewsSourceUpdate(ws, frame);
+        break;
+
+      case "newsSource.delete":
+        this.handleNewsSourceDelete(ws, frame);
+        break;
+
+      case "newsSource.toggle":
+        this.handleNewsSourceToggle(ws, frame);
+        break;
+
+      case "newsSource.fetchNow":
+        await this.handleNewsSourceFetchNow(ws, frame);
         break;
 
       default:
@@ -1101,6 +1142,125 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
     sendSuccess(ws, frame.id, { taskTypes });
   }
 
+  // ===== NewsSource Handlers =====
+
+  private handleNewsSourceList(ws: WebSocket, frame: RequestFrame): void {
+    const sources = this.newsSourceStore.list();
+    sendSuccess(ws, frame.id, { sources });
+  }
+
+  private handleNewsSourceGet(ws: WebSocket, frame: RequestFrame): void {
+    const { id } = frame.params as { id: string };
+    const source = this.newsSourceStore.get(id);
+    if (!source) {
+      sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
+      return;
+    }
+    sendSuccess(ws, frame.id, { source });
+  }
+
+  private handleNewsSourceCreate(ws: WebSocket, frame: RequestFrame): void {
+    try {
+      const params = frame.params as CreateNewsSourceParams;
+      const source = this.newsSourceStore.create(params);
+      sendSuccess(ws, frame.id, { source });
+      this.broadcast("newsSource.updated", { source });
+    } catch (error) {
+      sendError(ws, frame.id, "CREATE_ERROR", getErrorMessage(error));
+    }
+  }
+
+  private handleNewsSourceUpdate(ws: WebSocket, frame: RequestFrame): void {
+    try {
+      const { id, ...params } = frame.params as {
+        id: string;
+      } & UpdateNewsSourceParams;
+      const source = this.newsSourceStore.update(id, params);
+      if (!source) {
+        sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
+        return;
+      }
+      sendSuccess(ws, frame.id, { source });
+      this.broadcast("newsSource.updated", { source });
+    } catch (error) {
+      sendError(ws, frame.id, "UPDATE_ERROR", getErrorMessage(error));
+    }
+  }
+
+  private handleNewsSourceDelete(ws: WebSocket, frame: RequestFrame): void {
+    const { id } = frame.params as { id: string };
+    const deleted = this.newsSourceStore.delete(id);
+    if (!deleted) {
+      sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
+      return;
+    }
+    sendSuccess(ws, frame.id, { deleted: true });
+    this.broadcast("newsSource.deleted", { id });
+  }
+
+  private handleNewsSourceToggle(ws: WebSocket, frame: RequestFrame): void {
+    const { id, enabled } = frame.params as { id: string; enabled: boolean };
+    const source = this.newsSourceStore.toggle(id, enabled);
+    if (!source) {
+      sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
+      return;
+    }
+    sendSuccess(ws, frame.id, { source });
+    this.broadcast("newsSource.updated", { source });
+  }
+
+  private async handleNewsSourceFetchNow(
+    ws: WebSocket,
+    frame: RequestFrame,
+  ): Promise<void> {
+    const { id } = frame.params as { id: string };
+    const source = this.newsSourceStore.get(id);
+
+    if (!source) {
+      sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
+      return;
+    }
+
+    // 即座に開始を返す
+    sendSuccess(ws, frame.id, { status: "started" });
+
+    // バックグラウンドでフェッチ実行
+    this.executeNewsSourceFetch(source).catch((error) => {
+      console.error(`[Gateway] NewsSource fetch failed for ${id}:`, error);
+    });
+  }
+
+  private async executeNewsSourceFetch(
+    source: NewsSourceDefinition,
+  ): Promise<void> {
+    console.log(`[Gateway] NewsSource fetch started for ${source.name}`);
+
+    try {
+      if (source.sourceType === "x-account") {
+        const config = source.sourceConfig as XAccountConfig;
+        const result = await fetchXAccount(config);
+        const articles = result.tweets.map((tweet) => tweetToArticle(tweet));
+
+        if (articles.length > 0) {
+          await this.newsStore.save(articles);
+          this.broadcast("news.updated", { articles: this.newsStore.list() });
+        }
+
+        console.log(
+          `[Gateway] Fetched ${articles.length} articles from ${source.name}`,
+        );
+      }
+
+      const updatedSource = this.newsSourceStore.updateLastFetchedAt(source.id);
+      if (updatedSource) {
+        this.broadcast("newsSource.updated", { source: updatedSource });
+      }
+    } catch (error) {
+      console.error(`[Gateway] NewsSource fetch error:`, error);
+      throw error;
+    }
+  }
+
   // ===== Discord Integration Methods =====
 
   async chatForDiscord(prompt: string): Promise<string> {
@@ -1227,6 +1387,7 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
   stop(): void {
     this.schedulerManager.stop();
     this.scheduleStore.close();
+    this.newsSourceStore.close();
     this.wss.close();
     this.httpServer.close();
     this.sessionManager.close();
