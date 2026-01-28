@@ -57,6 +57,11 @@ import {
   type UpdateTaskParams,
   type TaskExecutionResult,
 } from "../scheduler/index.js";
+import {
+  XPostWorkflowService,
+  type XPostProgressEvent,
+  type XPostWorkflowOptions,
+} from "../xpost/index.js";
 
 interface AgentLogParams {
   tool?: string;
@@ -96,6 +101,46 @@ function sendSuccess(ws: WebSocket, id: string, payload?: unknown): void {
   sendResponse(ws, id, true, payload);
 }
 
+const DEFAULT_ALLOWED_ORIGINS = [
+  "http://localhost:3048",
+  "http://127.0.0.1:3048",
+];
+
+const ALLOWED_ORIGINS = new Set(
+  (process.env.GATEWAY_ALLOWED_ORIGINS ?? DEFAULT_ALLOWED_ORIGINS.join(","))
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+);
+
+const WS_TOKEN = process.env.GATEWAY_WS_TOKEN;
+
+function isOriginAllowed(origin: string | undefined): boolean {
+  if (!origin) {
+    return true;
+  }
+  return ALLOWED_ORIGINS.has(origin);
+}
+
+function isTokenAllowed(req: {
+  url?: string;
+  headers?: { host?: string };
+}): boolean {
+  if (!WS_TOKEN) {
+    return true;
+  }
+  try {
+    const url = new URL(
+      req.url ?? "",
+      `http://${req.headers?.host ?? "localhost"}`,
+    );
+    const token = url.searchParams.get("token");
+    return token === WS_TOKEN;
+  } catch {
+    return false;
+  }
+}
+
 export class GatewayServer {
   private app: Hono;
   private httpServer: Server;
@@ -117,6 +162,7 @@ export class GatewayServer {
   private scheduleStore: ScheduleStore;
   private taskRegistry: TaskRegistry;
   private taskExecutor: TaskExecutor;
+  private xpostWorkflowService: XPostWorkflowService;
   private port: number;
   private clients: Set<WebSocket> = new Set();
 
@@ -156,6 +202,8 @@ export class GatewayServer {
       this.taskExecutor,
       (task) => this.broadcast("schedule.updated", { task }),
     );
+
+    this.xpostWorkflowService = new XPostWorkflowService();
 
     this.setupRoutes();
     this.setupWebSocket();
@@ -363,7 +411,18 @@ export class GatewayServer {
   }
 
   private setupWebSocket(): void {
-    this.wss.on("connection", (ws, _req) => {
+    this.wss.on("connection", (ws, req) => {
+      if (!isTokenAllowed(req)) {
+        console.warn("WebSocket connection rejected (invalid token)");
+        ws.close(1008, "Invalid token");
+        return;
+      }
+      const origin = req.headers.origin;
+      if (!isOriginAllowed(origin)) {
+        console.warn(`WebSocket connection rejected (origin: ${origin})`);
+        ws.close(1008, "Origin not allowed");
+        return;
+      }
       const session = this.sessionManager.create("web");
       this.clients.add(ws);
 
@@ -571,6 +630,11 @@ export class GatewayServer {
 
       case "newsSource.fetchNow":
         await this.handleNewsSourceFetchNow(ws, frame);
+        break;
+
+      // ===== XPost Handlers =====
+      case "xpost.generate":
+        await this.handleXpostGenerate(ws, frame);
         break;
 
       default:
@@ -1259,6 +1323,41 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
       console.error(`[Gateway] NewsSource fetch error:`, error);
       throw error;
     }
+  }
+
+  // ===== XPost Handlers =====
+
+  private async handleXpostGenerate(
+    ws: WebSocket,
+    frame: RequestFrame,
+  ): Promise<void> {
+    const { articleId, options } = frame.params as {
+      articleId: string;
+      options?: XPostWorkflowOptions;
+    };
+
+    const article = this.newsStore.getById(articleId);
+    if (!article) {
+      sendError(ws, frame.id, "NOT_FOUND", `Article not found: ${articleId}`);
+      return;
+    }
+
+    // 即座に「開始しました」を返す
+    sendSuccess(ws, frame.id, { status: "started" });
+
+    // バックグラウンドで実行、進捗はbroadcast
+    this.xpostWorkflowService
+      .execute(article, options ?? {}, (event: XPostProgressEvent) => {
+        this.broadcast("xpost.progress", { articleId, ...event });
+      })
+      .then((result) => {
+        this.broadcast("xpost.completed", result);
+      })
+      .catch((error) => {
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
+        this.broadcast("xpost.failed", { articleId, error: errorMessage });
+      });
   }
 
   // ===== Discord Integration Methods =====

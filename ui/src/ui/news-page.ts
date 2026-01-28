@@ -4,6 +4,7 @@ import { customElement, state } from "lit/decorators.js";
 import { wsClient, type NewsArticle } from "../services/ws-client.js";
 import type { NewsSource } from "./types.js";
 import "./news-timeline-item.js";
+import "./xpost-modal.js";
 
 const refreshIcon = svg`<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>`;
 
@@ -166,6 +167,9 @@ export class NewsPageElement extends LitElement {
   @state()
   private error: string | null = null;
 
+  @state()
+  private xpostArticle: NewsArticle | null = null;
+
   private boundHandleNewsUpdated = this.handleNewsUpdated.bind(this);
   private boundHandleConnected = this.handleConnected.bind(this);
 
@@ -252,6 +256,15 @@ export class NewsPageElement extends LitElement {
     this.expandedId = this.expandedId === id ? null : id;
   }
 
+  private handlePostToX(e: CustomEvent): void {
+    const { article } = e.detail as { article: NewsArticle };
+    this.xpostArticle = article;
+  }
+
+  private handleCloseXpostModal(): void {
+    this.xpostArticle = null;
+  }
+
   private renderContent(): ReturnType<typeof html> {
     if (this.error) {
       return html`<div class="error-state">${this.error}</div>`;
@@ -279,6 +292,7 @@ export class NewsPageElement extends LitElement {
               .article="${article}"
               .expanded="${this.expandedId === article.id}"
               @toggle="${this.handleToggle}"
+              @post-to-x="${this.handlePostToX}"
             ></indra-news-timeline-item>
           `,
         )}
@@ -328,6 +342,15 @@ export class NewsPageElement extends LitElement {
       </div>
 
       ${this.renderContent()}
+      ${this.xpostArticle
+        ? html`
+            <indra-xpost-modal
+              .article="${this.xpostArticle}"
+              @close="${this.handleCloseXpostModal}"
+              @approved="${this.handleCloseXpostModal}"
+            ></indra-xpost-modal>
+          `
+        : null}
     `;
   }
 }

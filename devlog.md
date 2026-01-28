@@ -852,6 +852,7 @@ News機能コード整理（code-simplifier使用）
 
 - Discord.js で Bot 名取得: `client.user.username`
 - Gateway 起動は `pnpm gateway`、TypeScript watch は `pnpm dev`
+- UI(Vite)は `pnpm exec vite --port 3048 --strictPort` で確実に3048起動
 - Lit コンポーネントで `isConnected` は予約語（HTMLElement に存在）
 - TOML ファイルを `.json` 拡張子で保存すると prettier がエラー
 
@@ -1080,3 +1081,46 @@ News機能タイムアウト修正
 - agent-browserスキルとの統合でX実際フェッチ実装
 - RSS/Webソース対応
 - スケジューラーとの連携（定期フェッチ）
+
+---
+
+## 2026-01-29 02:09 [IMPL] X投稿ワークフローUI完結機能
+
+### 実装内容
+
+- **バックエンド（src/xpost/）:**
+  - `types.ts` - XPostWorkflowStage, XPostProgressEvent, GeneratedPost, XPostWorkflowResult 型定義
+  - `system-prompt.ts` - スコアリングルール・テンプレート埋め込みSystem Prompt生成
+  - `workflow-service.ts` - Claude Opus 4.5を`query()`で直接呼び出すワークフロー
+  - `index.ts` - エクスポート
+- **Gateway拡張:**
+  - `src/gateway/server.ts` - `xpost.generate` ハンドラー追加
+  - 即座に `{status:"started"}` 返却、進捗は `xpost.progress` でブロードキャスト
+  - 完了時 `xpost.completed`、失敗時 `xpost.failed` イベント
+- **UI（WebSocketクライアント）:**
+  - `ui/src/services/ws-client.ts` - `xpostGenerate()` メソッド、XPost関連型追加
+- **UI（モーダル）:**
+  - `ui/src/ui/xpost-modal.ts` - 進捗バー・結果表示・承認キュー追加モーダル
+  - 評価詳細（replyPotential, engagementPotential等）表示
+  - 複数候補から選択可能
+- **UI（統合）:**
+  - `ui/src/ui/news-page.ts` - `post-to-x` イベント処理、モーダル表示制御
+
+### 成功
+
+- Claude Agent SDK `query()` を直接呼び出す実装完了
+- スコアリングルール・テンプレートをSystem Promptに埋め込み
+- 進捗バー（0-100%）でリアルタイム状況表示
+- 生成ポスト3候補から選択→承認キュー追加フロー完成
+- ビルドエラーなし
+
+### 学び
+
+- Agent SDKの`query()`は直接呼び出し可能（プロバイダー経由不要）
+- System Promptにルールを埋め込むことでLLMの出力を制御
+- JSON形式出力を強制し、パース失敗時はフォールバックポスト生成
+- `refinePost()` で再帰的にスコア改善可能（maxRetries制限付き）
+
+### 関連タスク
+
+X投稿ワークフローUI完結実装

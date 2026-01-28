@@ -5,6 +5,7 @@
 
 export type { LogEntry } from "../ui/types.js";
 import type { LogEntry } from "../ui/types.js";
+import { buildWsUrl } from "./ws-url.js";
 
 export interface ApprovalItem {
   id: string;
@@ -62,7 +63,55 @@ export type WSClientEvent =
   | "disconnected"
   | "post.created"
   | "post.updated"
-  | "news.updated";
+  | "news.updated"
+  | "xpost.progress"
+  | "xpost.completed"
+  | "xpost.failed";
+
+// XPost Types
+export type XPostWorkflowStage =
+  | "started"
+  | "content_fetching"
+  | "template_selecting"
+  | "composing"
+  | "evaluating"
+  | "refining"
+  | "completed"
+  | "failed";
+
+export interface PostEvaluation {
+  overallScore: number;
+  replyPotential: number;
+  engagementPotential: number;
+  dwellTimePotential: number;
+  contentQuality: number;
+  feedback: string;
+}
+
+export interface XPostProgressEvent {
+  articleId: string;
+  stage: XPostWorkflowStage;
+  message: string;
+  progress: number;
+}
+
+export interface GeneratedPost {
+  id: string;
+  text: string;
+  charCount: number;
+  score?: number;
+  templateUsed: string;
+  evaluation?: PostEvaluation;
+}
+
+export interface XPostWorkflowResult {
+  success: boolean;
+  articleId: string;
+  bestPost?: GeneratedPost;
+  allPosts?: GeneratedPost[];
+  error?: string;
+  processingTime: number;
+}
 
 export class WSClientService extends EventTarget {
   private ws?: WebSocket;
@@ -86,7 +135,7 @@ export class WSClientService extends EventTarget {
   constructor(options: WSClientOptions = {}) {
     super();
     this.options = {
-      url: options.url ?? "ws://localhost:3001",
+      url: options.url ?? buildWsUrl(),
       reconnect: options.reconnect ?? true,
       reconnectInterval: options.reconnectInterval ?? 1000,
       maxReconnectAttempts: options.maxReconnectAttempts ?? 5,
@@ -383,6 +432,19 @@ export class WSClientService extends EventTarget {
       throw new Error(res.error?.message ?? "Failed to refresh logs");
     }
     return (res.payload as { logs: LogEntry[] }).logs;
+  }
+
+  // ===== XPost API Methods =====
+
+  async xpostGenerate(params: {
+    articleId: string;
+    options?: { targetScore?: number; maxRetries?: number };
+  }): Promise<{ status: string }> {
+    const res = await this.sendRequest("xpost.generate", params);
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to generate X post");
+    }
+    return res.payload as { status: string };
   }
 }
 
