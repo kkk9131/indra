@@ -163,6 +163,13 @@ export class LogStore {
     return this.parseRows(rows);
   }
 
+  listSince(since: Date): LogEntry[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM logs WHERE timestamp >= ? ORDER BY timestamp ASC`)
+      .all(since.toISOString()) as Array<Record<string, unknown>>;
+    return this.parseRows(rows);
+  }
+
   deleteOlderThan(date: Date): number {
     return this.db
       .prepare(`DELETE FROM logs WHERE timestamp < ?`)

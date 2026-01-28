@@ -66,4 +66,5 @@ pnpm lint             # リント
 ## Skills
 
 - agent-browser: `.claude/skills/agent-browser/`
-- anthropic-news: `.claude/skills/anthropic-news/`
+- anthropic-news-fetch: `.claude/skills/anthropic-news-fetch/`
+- anthropic-news-summarize: `.claude/skills/anthropic-news-summarize/`

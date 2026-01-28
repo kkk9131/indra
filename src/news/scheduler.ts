@@ -61,7 +61,7 @@ export class NewsScheduler {
     try {
       console.log("NewsScheduler: Running news fetch...");
 
-      // Anthropic Newsを取得
+      // Anthropic Newsを取得（コマンドで要約も含めて取得）
       const articles = await fetchAnthropicNews();
 
       // 過去24時間のみをフィルタ

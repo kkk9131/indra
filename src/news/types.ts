@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /** ニュースソースの種類 */
-export type NewsSource = "claude-code" | "blog";
+export type NewsSource = "claude-code" | "blog" | "log-analysis";
 
 /** ニュース記事 */
 export interface NewsArticle {
@@ -21,18 +21,24 @@ export interface NewsArticle {
   fetchedAt: string;
   /** コンテンツハッシュ（変更検知用） */
   contentHash?: string;
+  /** 記事本文（取得できない場合はnull） */
+  body: string | null;
+  /** サムネイル画像URL（取得できない場合はnull） */
+  imageUrl: string | null;
 }
 
 /** NewsArticleのZodスキーマ */
 export const NewsArticleSchema = z.object({
   id: z.string(),
-  source: z.enum(["claude-code", "blog"]),
+  source: z.enum(["claude-code", "blog", "log-analysis"]),
   title: z.string(),
   summary: z.string().nullable(),
   url: z.string().url(),
   publishedAt: z.string().nullable(),
   fetchedAt: z.string(),
   contentHash: z.string().optional(),
+  body: z.string().nullable(),
+  imageUrl: z.string().nullable(),
 });
 
 /** NewsArticle配列のZodスキーマ */

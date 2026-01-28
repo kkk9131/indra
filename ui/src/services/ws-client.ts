@@ -46,13 +46,15 @@ type EventHandler = (payload: unknown, frame: EventFrame) => void;
 /** News article type matching backend schema */
 export interface NewsArticle {
   id: string;
-  source: "claude-code" | "blog";
+  source: "claude-code" | "blog" | "log-analysis";
   title: string;
   summary: string | null;
   url: string;
   publishedAt: string | null;
   fetchedAt: string;
   contentHash?: string;
+  body?: string | null;
+  imageUrl?: string | null;
 }
 
 export type WSClientEvent =

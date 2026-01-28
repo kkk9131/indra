@@ -11,36 +11,53 @@ import type { NewsArticle, NewsSource } from "./types.js";
 export async function fetchAnthropicNews(): Promise<NewsArticle[]> {
   try {
     let result: string | undefined;
-    const timeoutMs = 30000;
+    const timeoutMs = 600000; // 10分（agent-browser用）
     const startTime = Date.now();
 
+    console.log("[NewsFetcher] Starting query with /anthropic-news-fetch");
+
     for await (const message of query({
-      prompt: "/anthropic-news",
+      prompt: "/anthropic-news-fetch",
       options: {
         cwd: process.cwd(),
         settingSources: ["user", "project"],
-        allowedTools: ["Skill", "WebFetch"],
-        model: "haiku",
-        maxTurns: 5,
+        allowedTools: ["Skill", "Bash"],
+        model: "sonnet",
+        maxTurns: 30, // agent-browser操作用
       },
     })) {
+      // すべてのメッセージをログ出力
+      console.log("[NewsFetcher] Message:", JSON.stringify(message, null, 2));
+
       // タイムアウトチェック
       if (Date.now() - startTime > timeoutMs) {
-        console.warn("Anthropic news fetch timeout");
+        console.warn("[NewsFetcher] Timeout after 10 minutes");
         break;
       }
 
-      if (message.type === "result" && message.subtype === "success") {
-        result = message.result;
-        break;
+      if (message.type === "result") {
+        const subtype = (message as { subtype?: string }).subtype;
+        if (subtype === "success") {
+          console.log("[NewsFetcher] Got success result");
+          result = (message as { result?: string }).result;
+          break;
+        } else {
+          console.error("[NewsFetcher] Got non-success result:", subtype);
+          break;
+        }
       }
     }
+
+    console.log(
+      "[NewsFetcher] Query finished, result:",
+      result ? "got data" : "no data",
+    );
 
     if (!result) {
       return [];
     }
 
-    return parseMarkdownToArticles(result);
+    return parseJsonToArticles(result);
   } catch (error) {
     console.error("Failed to fetch Anthropic news:", error);
     return [];
@@ -64,79 +81,89 @@ export function filterLast24Hours(articles: NewsArticle[]): NewsArticle[] {
   });
 }
 
+/** コマンド出力のJSON型定義 */
+interface CommandOutput {
+  articles: Array<{
+    source: string;
+    title: string;
+    url: string;
+    publishedAt: string;
+    summary: string;
+    body?: string;
+    imageUrl?: string;
+  }>;
+  error?: string;
+}
+
 /**
- * Markdown出力をパースしてNewsArticle配列に変換
- * @param markdown スキル出力のMarkdown
+ * JSON出力をパースしてNewsArticle配列に変換
+ * @param output コマンド出力（JSON形式）
  * @returns パース後の記事配列
  */
-function parseMarkdownToArticles(markdown: string): NewsArticle[] {
-  const articles: NewsArticle[] = [];
+function parseJsonToArticles(output: string): NewsArticle[] {
   const fetchedAt = new Date().toISOString();
 
   try {
-    // セクション分割（## Claude Code ドキュメント、## Anthropic ブログ）
-    const sections = markdown.split(/^## /m).filter((s) => s.trim());
-
-    for (const section of sections) {
-      const source = detectSource(section);
-      if (!source) continue;
-
-      // 記事エントリーを抽出
-      // 想定フォーマット: "1. **タイトル** (日付)\n   URL: https://..."
-      // または: "- **タイトル** (日付)\n  URL: https://..."
-      const entryPattern =
-        /(?:^\d+\.\s+|-\s+)\*\*(.+?)\*\*\s*(?:\(([^)]+)\))?[\s\S]*?(?:URL:\s*)?(https?:\/\/[^\s)]+)/gim;
-
-      let match;
-      while ((match = entryPattern.exec(section)) !== null) {
-        const title = match[1]?.trim();
-        const dateStr = match[2]?.trim();
-        const url = match[3]?.trim();
-
-        if (!title || !url) continue;
-
-        const publishedAt = parseDateString(dateStr);
-        const id = generateArticleId(url);
-        const contentHash = generateContentHash(title, url, publishedAt);
-
-        articles.push({
-          id,
-          source,
-          title,
-          summary: null, // スキル出力から要約は取得しない
-          url,
-          publishedAt,
-          fetchedAt,
-          contentHash,
-        });
-      }
+    // JSON部分を抽出（前後の説明文を除去）
+    const jsonMatch = output.match(/\{[\s\S]*"articles"[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn("No JSON found in command output");
+      return [];
     }
 
-    return articles;
+    const parsed: CommandOutput = JSON.parse(jsonMatch[0]);
+
+    if (parsed.error) {
+      console.warn("Command returned error:", parsed.error);
+    }
+
+    if (!parsed.articles || !Array.isArray(parsed.articles)) {
+      return [];
+    }
+
+    return parsed.articles.map((article) => {
+      const source = mapSource(article.source);
+      const publishedAt = parseDateString(article.publishedAt);
+      const id = generateArticleId(article.url);
+      const contentHash = generateContentHash(
+        article.title,
+        article.url,
+        publishedAt,
+      );
+
+      return {
+        id,
+        source,
+        title: article.title,
+        summary: article.summary || null,
+        url: article.url,
+        publishedAt,
+        fetchedAt,
+        contentHash,
+        body: article.body || null,
+        imageUrl: article.imageUrl || null,
+      };
+    });
   } catch (error) {
-    console.error("Failed to parse markdown:", error);
+    console.error("Failed to parse JSON:", error);
     return [];
   }
 }
 
 /**
- * セクションからニュースソースを判定
+ * ソース文字列をNewsSourceにマッピング
  */
-function detectSource(section: string): NewsSource | null {
-  const firstLine = section.split("\n")[0].toLowerCase();
+function mapSource(source: string): NewsSource {
+  const normalized = source.toLowerCase();
 
-  const isClaudeCode =
-    firstLine.includes("claude code") || firstLine.includes("ドキュメント");
-  if (isClaudeCode) {
+  if (
+    normalized.includes("claude-code") ||
+    normalized.includes("claude code")
+  ) {
     return "claude-code";
   }
 
-  const isBlog = firstLine.includes("blog") || firstLine.includes("ブログ");
-  if (isBlog) {
-    return "blog";
-  }
-
-  return null;
+  return "blog";
 }
 
 /**
