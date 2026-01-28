@@ -78,6 +78,11 @@ export class NewsTimelineItemElement extends LitElement {
       color: #2e7d32;
     }
 
+    .badge.log-analysis {
+      background: rgba(52, 152, 219, 0.1);
+      color: #2980b9;
+    }
+
     .title {
       font-size: 16px;
       font-weight: 600;
@@ -242,11 +247,31 @@ export class NewsTimelineItemElement extends LitElement {
     });
   }
 
+  private getBadgeClass(): string {
+    switch (this.article.source) {
+      case "claude-code":
+        return "claude-code";
+      case "log-analysis":
+        return "log-analysis";
+      default:
+        return "blog";
+    }
+  }
+
+  private getBadgeLabel(): string {
+    switch (this.article.source) {
+      case "claude-code":
+        return "Claude Code";
+      case "log-analysis":
+        return "Report";
+      default:
+        return "Blog";
+    }
+  }
+
   render() {
-    const badgeClass =
-      this.article.source === "claude-code" ? "claude-code" : "blog";
-    const badgeLabel =
-      this.article.source === "claude-code" ? "Claude Code" : "Blog";
+    const badgeClass = this.getBadgeClass();
+    const badgeLabel = this.getBadgeLabel();
 
     return html`
       <article

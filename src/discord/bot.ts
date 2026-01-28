@@ -4,7 +4,9 @@ import {
   REST,
   Routes,
   SlashCommandBuilder,
+  TextChannel,
   type ChatInputCommandInteraction,
+  type APIEmbed,
 } from "discord.js";
 import type {
   DiscordBotConfig,
@@ -196,5 +198,36 @@ export class DiscordBot {
 
   getBotName(): string | null {
     return this.client.user?.username ?? null;
+  }
+
+  /**
+   * 指定チャンネルにEmbedを送信
+   */
+  async sendEmbed(
+    channelId: string,
+    embed: APIEmbed,
+  ): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    if (!this.client.isReady()) {
+      return { success: false, error: "Discord bot not ready" };
+    }
+
+    try {
+      const channel = await this.client.channels.fetch(channelId);
+      if (!channel || !("send" in channel)) {
+        return {
+          success: false,
+          error: "Channel not found or not a text channel",
+        };
+      }
+
+      const textChannel = channel as TextChannel;
+      const message = await textChannel.send({ embeds: [embed] });
+
+      return { success: true, messageId: message.id };
+    } catch (error) {
+      const errorMessage = getErrorMessage(error, "Failed to send embed");
+      console.error("Discord sendEmbed error:", errorMessage);
+      return { success: false, error: errorMessage };
+    }
   }
 }

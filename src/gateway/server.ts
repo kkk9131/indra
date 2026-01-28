@@ -32,6 +32,13 @@ import {
 import { DiscordBot, commands as discordCommands } from "../discord/index.js";
 import { LogStore, LogCollector, type AgentActionType } from "../logs/index.js";
 import type { ApprovalItem } from "../approval/types.js";
+import {
+  LogAnalyzer,
+  AnalyticsScheduler,
+  createReportEmbed,
+  type DailyReport,
+} from "../analytics/index.js";
+import type { NewsArticle } from "../news/types.js";
 
 interface AgentLogParams {
   tool?: string;
@@ -86,6 +93,8 @@ export class GatewayServer {
   private newsScheduler: NewsScheduler;
   private logStore: LogStore;
   private logCollector: LogCollector;
+  private logAnalyzer: LogAnalyzer | null = null;
+  private analyticsScheduler: AnalyticsScheduler | null = null;
   private port: number;
   private clients: Set<WebSocket> = new Set();
 
@@ -115,7 +124,49 @@ export class GatewayServer {
     this.initConnectors();
     this.initOAuth2();
     this.initDiscordBot();
+    this.initAnalytics();
     this.newsScheduler.start();
+  }
+
+  private initAnalytics(): void {
+    // ZAI_API_KEY がない場合はスキップ
+    if (!process.env.ZAI_API_KEY) {
+      console.log("AnalyticsScheduler: Skipped (ZAI_API_KEY not set)");
+      return;
+    }
+
+    try {
+      this.logAnalyzer = new LogAnalyzer(this.logStore);
+      this.analyticsScheduler = new AnalyticsScheduler(
+        this.logAnalyzer,
+        (report, article) => this.handleReportGenerated(report, article),
+      );
+      this.analyticsScheduler.start();
+    } catch (error) {
+      console.error("Failed to initialize analytics:", error);
+    }
+  }
+
+  private async handleReportGenerated(
+    report: DailyReport,
+    article: NewsArticle,
+  ): Promise<void> {
+    // 1. NewsStoreに保存
+    this.newsStore.save([article]);
+
+    // 2. WebSocketブロードキャスト
+    const articles = this.newsStore.list();
+    this.broadcast("news.updated", { articles });
+
+    // 3. Discord通知
+    const channelId = process.env.DISCORD_REPORT_CHANNEL_ID;
+    if (channelId && this.discordBot?.isReady()) {
+      const embed = createReportEmbed(report);
+      const result = await this.discordBot.sendEmbed(channelId, embed);
+      if (!result.success) {
+        console.error("Failed to send report to Discord:", result.error);
+      }
+    }
   }
 
   private initConnectors(): void {
@@ -363,6 +414,10 @@ export class GatewayServer {
         await this.handleLogsRefresh(ws, frame);
         break;
 
+      case "analytics.runNow":
+        await this.handleAnalyticsRunNow(ws, frame);
+        break;
+
       default:
         sendError(
           ws,
@@ -457,6 +512,7 @@ export class GatewayServer {
           "Grep",
           "Bash",
           "WebSearch",
+          "Skill",
         ],
         permissionMode: agentOptions?.permissionMode ?? "acceptEdits",
       },
@@ -784,12 +840,15 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
   }
 
   private handleNewsRefresh(ws: WebSocket, frame: RequestFrame): void {
+    console.log("[Gateway] handleNewsRefresh called");
+
     // 即座に「開始しました」を返す
     sendSuccess(ws, frame.id, { status: "started" });
 
     // バックグラウンドで実行（awaitしない）
+    console.log("[Gateway] Starting newsScheduler.run()");
     this.newsScheduler.run().catch((error) => {
-      console.error("News refresh failed:", error);
+      console.error("[Gateway] News refresh failed:", error);
     });
   }
 
@@ -809,6 +868,34 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
       sendSuccess(ws, frame.id, { logs });
     } catch (error) {
       sendError(ws, frame.id, "LOGS_REFRESH_ERROR", getErrorMessage(error));
+    }
+  }
+
+  // ===== Analytics Handlers =====
+
+  private async handleAnalyticsRunNow(
+    ws: WebSocket,
+    frame: RequestFrame,
+  ): Promise<void> {
+    if (!this.analyticsScheduler) {
+      sendError(
+        ws,
+        frame.id,
+        "ANALYTICS_NOT_CONFIGURED",
+        "Analytics not configured. Set ZAI_API_KEY environment variable.",
+      );
+      return;
+    }
+
+    try {
+      sendSuccess(ws, frame.id, { status: "started" });
+
+      // バックグラウンドで実行
+      this.analyticsScheduler.run().catch((error) => {
+        console.error("[Gateway] Analytics run failed:", error);
+      });
+    } catch (error) {
+      sendError(ws, frame.id, "ANALYTICS_ERROR", getErrorMessage(error));
     }
   }
 
@@ -937,6 +1024,7 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
 
   stop(): void {
     this.newsScheduler.stop();
+    this.analyticsScheduler?.stop();
     this.wss.close();
     this.httpServer.close();
     this.sessionManager.close();

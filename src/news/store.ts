@@ -24,9 +24,15 @@ export class NewsStore {
         url TEXT NOT NULL,
         publishedAt TEXT,
         fetchedAt TEXT NOT NULL,
-        contentHash TEXT
+        contentHash TEXT,
+        body TEXT,
+        imageUrl TEXT
       )
     `);
+
+    // 既存テーブルにカラムがない場合は追加
+    this.addColumnIfNotExists("body", "TEXT");
+    this.addColumnIfNotExists("imageUrl", "TEXT");
 
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_news_fetchedAt ON news_articles(fetchedAt DESC)
@@ -35,6 +41,16 @@ export class NewsStore {
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_news_contentHash ON news_articles(contentHash)
     `);
+  }
+
+  private addColumnIfNotExists(columnName: string, columnType: string): void {
+    try {
+      this.db.exec(
+        `ALTER TABLE news_articles ADD COLUMN ${columnName} ${columnType}`,
+      );
+    } catch {
+      // カラムが既に存在する場合は無視
+    }
   }
 
   private rowToArticle(row: Record<string, unknown>): NewsArticle | null {
@@ -50,8 +66,8 @@ export class NewsStore {
 
   save(articles: NewsArticle[]): void {
     const upsert = this.db.prepare(`
-      INSERT INTO news_articles (id, source, title, summary, url, publishedAt, fetchedAt, contentHash)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO news_articles (id, source, title, summary, url, publishedAt, fetchedAt, contentHash, body, imageUrl)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         source = excluded.source,
         title = excluded.title,
@@ -59,7 +75,9 @@ export class NewsStore {
         url = excluded.url,
         publishedAt = excluded.publishedAt,
         fetchedAt = excluded.fetchedAt,
-        contentHash = excluded.contentHash
+        contentHash = excluded.contentHash,
+        body = excluded.body,
+        imageUrl = excluded.imageUrl
     `);
 
     const transaction = this.db.transaction(() => {
@@ -73,6 +91,8 @@ export class NewsStore {
           article.publishedAt,
           article.fetchedAt,
           article.contentHash ?? null,
+          article.body ?? null,
+          article.imageUrl ?? null,
         );
       }
     });

@@ -78,7 +78,7 @@ export interface ApiToken {
 
 // Re-export news types from ws-client for consistency
 export type { NewsArticle } from "../services/ws-client.js";
-export type NewsSource = "claude-code" | "blog";
+export type NewsSource = "claude-code" | "blog" | "log-analysis";
 
 // Log types - these mirror the backend types in src/logs/types.ts
 // Keeping separate to avoid cross-package dependencies

@@ -985,3 +985,52 @@ News ストレージ SQLite 移行、anthropic-news スキル更新
 ### 関連タスク
 
 ログ画面機能実装（Phase 1-3）
+
+---
+
+## 2026-01-28 14:57 [DEBUG] News機能タイムアウト修正・調査
+
+### 実装内容
+
+- **タイムアウト対策（非同期化）:**
+  - `src/gateway/server.ts` - `handleNewsRefresh`を非同期化（即座に`{status:"started"}`を返す）
+  - `ui/src/services/ws-client.ts` - `newsRefresh()`の戻り値型を`{status:string}`に変更
+  - `ui/src/ui/news-page.ts` - `news.updated`イベントで`refreshing`状態解除
+- **スキル名修正:**
+  - `src/news/fetcher.ts` - プロンプトを`/anthropic-news` → `/anthropic-news-fetch`に修正
+  - モデルを`haiku` → `sonnet`に変更（agent-browser操作の安定性向上）
+  - タイムアウトを3分 → 10分に延長
+- **デバッグログ追加:**
+  - `src/news/fetcher.ts` - `[NewsFetcher]`ログを各ステップに追加
+  - `src/gateway/server.ts` - `[Gateway]`ログを追加
+- **チャットUIからスキル呼び出し対応:**
+  - `src/gateway/server.ts` - AgentモードのtoolsにSkillを追加
+- **ビルドエラー修正:**
+  - `openai`パッケージ追加（analytics依存）
+  - `src/news/types.ts` - NewsSourceに"log-analysis"追加
+  - `src/discord/bot.ts` - 未使用import修正（APIEmbed, TextChannel）
+
+### 成功
+
+- タイムアウト問題の根本原因特定（WebSocket 30秒 vs 処理3分）
+- 非同期化によりUIがタイムアウトしなくなった
+- agent-browserでAnthropicニュースページ取得成功を確認
+- ビルドエラー解消
+
+### 失敗/課題
+
+- スキルが「今日の日付の記事のみ」取得するため、今日の記事がないと空配列が返る
+- 最新記事はJan 27, 2026（昨日）のため、結果的に記事0件
+- ユーザーは「このままでいい」と判断（スキル修正せず）
+
+### 学び
+
+- スキル名の不一致（`/anthropic-news` vs `/anthropic-news-fetch`）に注意
+- `pnpm dev`はtsc watchのみ、サーバー起動は`pnpm gateway`が必要
+- デバッグログは`[Component]`形式でプレフィックスを統一すると追跡しやすい
+- agent-browserの操作はsonnetの方がhaikuより安定
+- スキルの仕様（今日の記事のみ）は要件次第で妥当な場合もある
+
+### 関連タスク
+
+News機能タイムアウト修正
