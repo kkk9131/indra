@@ -129,8 +129,10 @@ export class ScheduleListElement extends LitElement {
   render() {
     return html`
       <div class="section-header">
-        <span class="section-title">今日の予定 (${this.items.length})</span>
-        <a class="view-all" @click="${this.handleViewAll}">すべて見る →</a>
+        <span class="section-title"
+          >Today's Schedule (${this.items.length})</span
+        >
+        <a class="view-all" @click="${this.handleViewAll}">View all →</a>
       </div>
       <div class="list">
         ${this.items.map(

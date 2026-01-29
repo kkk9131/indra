@@ -141,8 +141,8 @@ export class PendingListElement extends LitElement {
   render() {
     return html`
       <div class="section-header">
-        <span class="section-title">承認待ち (${this.items.length})</span>
-        <a class="view-all" @click="${this.handleViewAll}">すべて見る →</a>
+        <span class="section-title">Pending (${this.items.length})</span>
+        <a class="view-all" @click="${this.handleViewAll}">View all →</a>
       </div>
       <div class="list">
         ${this.items.map(

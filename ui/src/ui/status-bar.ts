@@ -76,7 +76,7 @@ export class StatusBarElement extends LitElement {
       <span class="text-secondary">${this.llm}</span>
       <div class="divider"></div>
       <div class="pending-status">
-        <span class="text-secondary">承認待ち:</span>
+        <span class="text-secondary">Pending:</span>
         <span class="pending-count">${this.pendingCount}</span>
       </div>
     `;
