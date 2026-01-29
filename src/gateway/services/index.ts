@@ -33,12 +33,15 @@ import {
 } from "./discord.js";
 import { createSessionService, type SessionService } from "./session.js";
 import { createMemoryService, type MemoryService } from "./memory.js";
+import { EvaluationService } from "./evaluation.js";
 import type { SessionManager, TranscriptManager } from "../../infra/index.js";
 import type {
   MemoryStore,
   MemorySearch,
   MemoryIndexer,
 } from "../../memory/index.js";
+
+export type { EvaluationService } from "./evaluation.js";
 
 export type { AgentLogParams } from "./chat.js";
 export type { PostApproveResult } from "./post.js";
@@ -62,6 +65,7 @@ export interface GatewayServices {
   discordIntegration: DiscordIntegrationService;
   session: SessionService;
   memory: MemoryService;
+  evaluation: EvaluationService;
 }
 
 interface GatewayServiceDeps {
@@ -152,6 +156,8 @@ export function createGatewayServices(
         })
       : null;
 
+  const evaluation = new EvaluationService();
+
   return {
     config,
     chat,
@@ -165,6 +171,7 @@ export function createGatewayServices(
     xpost,
     session,
     memory: memory!,
+    evaluation,
     discordIntegration: createDiscordIntegrationService({
       chat,
       post,

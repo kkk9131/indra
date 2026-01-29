@@ -49,6 +49,8 @@ pnpm lint             # リント
 - **ログ・分析**: 全操作＋外部サービス連携を記録・分析
 - **ブラウザ自動化**: agent-browserによるWeb操作・スクレイピング
   → 詳細: `.claude/skills/agent-browser/SKILL.md`
+- **評価システム**: Pass@K/Pass Kによるエージェント評価（設計中）
+  → 詳細: `.claude/agent-docs/11-evaluation-system.md`
 
 ## 参考リポジトリ
 
@@ -64,6 +66,7 @@ pnpm lint             # リント
 - ブラウザ自動化: `.claude/agent-docs/07-browser-automation.md`
 - Xアルゴリズム: `.claude/agent-docs/09-x-algorithm.md`
 - Xアカウント情報: `.claude/agent-docs/10-x-account.md`
+- 評価システム: `.claude/agent-docs/11-evaluation-system.md`
 
 ## Skills
 

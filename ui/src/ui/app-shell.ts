@@ -2,6 +2,7 @@ import { LitElement, css, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { PendingItem } from "./pending-list.js";
 import type { ScheduleItem } from "./schedule-list.js";
+import type { ApprovalItem } from "../services/ws-client.js";
 import { wsClient } from "../services/ws-client.js";
 import "./sidebar-nav.js";
 import "./status-bar.js";
@@ -14,6 +15,7 @@ import "./accounts-page.js";
 import "./schedule-page.js";
 import "./news-page.js";
 import "./log-page.js";
+import "./evaluation-page.js";
 
 @customElement("indra-app-shell")
 export class AppShellElement extends LitElement {
@@ -95,55 +97,52 @@ export class AppShellElement extends LitElement {
   private chatOpen = false;
 
   @property({ type: Array })
-  pendingItems: PendingItem[] = [
-    {
-      id: "1",
-      platform: "x",
-      account: "@tech_kazuto",
-      preview: "「AIは創造性を...」",
-    },
-    {
-      id: "2",
-      platform: "x",
-      account: "@tech_kazuto",
-      preview: "「週末イベント...」",
-    },
-    {
-      id: "3",
-      platform: "note",
-      account: "@kazuto",
-      preview: "「AI時代の働き方」",
-    },
-  ];
+  pendingItems: PendingItem[] = [];
 
   @property({ type: Array })
-  scheduleItems: ScheduleItem[] = [
-    {
-      id: "1",
-      time: "18:00",
-      platform: "x",
-      account: "@tech_kazuto",
-      content: "「週末イベントの告知」",
-    },
-    {
-      id: "2",
-      time: "21:00",
-      platform: "x",
-      account: "@tech_kazuto",
-      content: "「今日の振り返り」",
-    },
-  ];
+  scheduleItems: ScheduleItem[] = [];
+
+  private async loadHomeData(): Promise<void> {
+    try {
+      const [pendingItems, scheduledItems, authStatus] = await Promise.all([
+        wsClient.postList("pending"),
+        wsClient.postList("scheduled"),
+        wsClient.authXStatus(),
+      ]);
+
+      const defaultAccount = authStatus.username
+        ? `@${authStatus.username}`
+        : "@user";
+
+      this.pendingItems = pendingItems.map((item) =>
+        toPendingItem(item, defaultAccount),
+      );
+
+      const today = new Date().toDateString();
+      this.scheduleItems = scheduledItems
+        .filter(
+          (item) =>
+            item.scheduledAt &&
+            new Date(item.scheduledAt).toDateString() === today,
+        )
+        .map((item) => toScheduleItem(item, defaultAccount));
+    } catch (error) {
+      console.error("[Home] Failed to load data:", error);
+    }
+  }
 
   connectedCallback(): void {
     super.connectedCallback();
-    // Initialize WebSocket connection
     wsClient.connect();
     wsClient.addEventListener("connected", () => {
       this.connected = true;
+      this.loadHomeData();
     });
     wsClient.addEventListener("disconnected", () => {
       this.connected = false;
     });
+    wsClient.addEventListener("post.created", () => this.loadHomeData());
+    wsClient.addEventListener("post.updated", () => this.loadHomeData());
   }
 
   disconnectedCallback(): void {
@@ -181,6 +180,8 @@ export class AppShellElement extends LitElement {
         return html`<indra-accounts-page></indra-accounts-page>`;
       case "settings":
         return html`<indra-settings-page></indra-settings-page>`;
+      case "evaluation":
+        return html`<indra-evaluation-page></indra-evaluation-page>`;
       default:
         return html`<div style="padding: 40px; font-size: 18px;">
           Coming soon...
@@ -221,6 +222,41 @@ export class AppShellElement extends LitElement {
       ></indra-chat-ui>
     `;
   }
+}
+
+function toPendingItem(
+  item: ApprovalItem,
+  defaultAccount: string,
+): PendingItem {
+  const text = item.content.text;
+  const preview =
+    text.length > 15 ? `「${text.slice(0, 15)}...」` : `「${text}」`;
+  return {
+    id: item.id,
+    platform: item.platform as "x" | "note",
+    account: defaultAccount,
+    preview,
+  };
+}
+
+function toScheduleItem(
+  item: ApprovalItem,
+  defaultAccount: string,
+): ScheduleItem {
+  const text = item.content.text;
+  const content = `「${text.length > 20 ? text.slice(0, 20) + "..." : text}」`;
+  return {
+    id: item.id,
+    time: item.scheduledAt
+      ? new Date(item.scheduledAt).toLocaleTimeString("ja-JP", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "--:--",
+    platform: item.platform as "x" | "note",
+    account: defaultAccount,
+    content,
+  };
 }
 
 declare global {

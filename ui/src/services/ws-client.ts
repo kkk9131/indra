@@ -505,6 +505,142 @@ export class WSClientService extends EventTarget {
     }
     return res.payload as { cancelled: boolean };
   }
+
+  // ===== Evaluation API Methods =====
+
+  async evalTaskList(params?: {
+    type?: string;
+    withMetrics?: boolean;
+    k?: number;
+  }): Promise<EvalTask[]> {
+    const res = await this.sendRequest("eval.task.list", params ?? {});
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to list evaluation tasks");
+    }
+    return (res.payload as { tasks: EvalTask[] }).tasks;
+  }
+
+  async evalTaskGet(
+    id: string,
+    k?: number,
+  ): Promise<{
+    task: EvalTask;
+    metrics: EvalMetrics | null;
+    trials: EvalTrial[];
+  }> {
+    const res = await this.sendRequest("eval.task.get", { id, k });
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to get evaluation task");
+    }
+    return res.payload as {
+      task: EvalTask;
+      metrics: EvalMetrics | null;
+      trials: EvalTrial[];
+    };
+  }
+
+  async evalTaskCreate(params: {
+    name: string;
+    taskType: string;
+    input: string;
+    successCriteria: string;
+    shouldFail?: boolean;
+  }): Promise<EvalTask> {
+    const res = await this.sendRequest("eval.task.create", params);
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to create evaluation task");
+    }
+    return (res.payload as { task: EvalTask }).task;
+  }
+
+  async evalTaskDelete(id: string): Promise<{ deleted: boolean }> {
+    const res = await this.sendRequest("eval.task.delete", { id });
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to delete evaluation task");
+    }
+    return res.payload as { deleted: boolean };
+  }
+
+  async evalRun(params: {
+    taskId: string;
+    outcome: string;
+    executionId?: string;
+    sessionId?: string;
+    outcomeId?: string;
+  }): Promise<{ trial: EvalTrial; graderResult: EvalGraderResult }> {
+    const res = await this.sendRequest("eval.run", params);
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to run evaluation");
+    }
+    return res.payload as { trial: EvalTrial; graderResult: EvalGraderResult };
+  }
+
+  async evalMetrics(taskId: string, k?: number): Promise<EvalMetrics> {
+    const res = await this.sendRequest("eval.metrics", { taskId, k });
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to get evaluation metrics");
+    }
+    return (res.payload as { metrics: EvalMetrics }).metrics;
+  }
+
+  async evalGraderStatus(): Promise<{ available: boolean }> {
+    const res = await this.sendRequest("eval.grader.status", {});
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to get grader status");
+    }
+    return res.payload as { available: boolean };
+  }
+}
+
+// ===== Evaluation Types =====
+
+export interface EvalTask {
+  id: string;
+  name: string;
+  taskType: string;
+  input: string;
+  successCriteria: string;
+  shouldFail?: boolean;
+  createdAt: string;
+  updatedAt: string;
+  metrics?: EvalMetrics | null;
+}
+
+export interface EvalTrial {
+  id: string;
+  taskId: string;
+  trialNumber: number;
+  executionId?: string | null;
+  sessionId?: string | null;
+  outcomeId?: string | null;
+  passed: boolean;
+  duration?: number | null;
+  createdAt: string;
+  graderResults?: EvalGraderResult[];
+}
+
+export interface EvalGraderResult {
+  id: string;
+  trialId: string;
+  graderType: string;
+  graderName: string;
+  passed: boolean;
+  score: number;
+  reason: string;
+  details?: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface EvalMetrics {
+  taskId: string;
+  totalTrials: number;
+  passedTrials: number;
+  passAtK: number;
+  passK: number;
+  k: number;
+  averageScore: number;
+  averageDuration?: number | null;
+  calculatedAt: string;
 }
 
 // Singleton instance

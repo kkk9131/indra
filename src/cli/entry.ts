@@ -4,6 +4,9 @@ import { registerChatCommand } from "../commands/chat.js";
 import { registerConfigCommand } from "../commands/config.js";
 import { registerPostCommand } from "../commands/post.js";
 import { registerDiscordCommand } from "../commands/discord.js";
+import { registerAuthCommand } from "../commands/auth.js";
+import { registerEvalCommand } from "../commands/eval.js";
+import { registerMemoryCommand } from "../commands/memory.js";
 
 const cli = createCli();
 
@@ -11,5 +14,8 @@ registerChatCommand(cli);
 registerConfigCommand(cli);
 registerPostCommand(cli);
 registerDiscordCommand(cli);
+registerAuthCommand(cli);
+registerEvalCommand(cli);
+registerMemoryCommand(cli);
 
 cli.parse(process.argv);

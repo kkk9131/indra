@@ -69,6 +69,12 @@ import {
   createEmbeddingProvider,
   ensureMemoryFiles,
 } from "../memory/index.js";
+import {
+  EvaluationStore,
+  AutoEvaluator,
+  type EvaluationHook,
+  type OutcomeLogEntry,
+} from "../evaluation/index.js";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -168,6 +174,8 @@ export class GatewayServer {
   private memoryStore: MemoryStore | null = null;
   private memorySearch: MemorySearch | null = null;
   private memoryIndexer: MemoryIndexer | null = null;
+  private evaluationStore: EvaluationStore;
+  private evaluationHooks: EvaluationHook[] = [];
   private services: GatewayServices;
   private requestHandlers: Map<string, RequestHandler>;
   private port: number;
@@ -219,6 +227,9 @@ export class GatewayServer {
 
     this.xpostWorkflowService = new XPostWorkflowService();
 
+    this.evaluationStore = new EvaluationStore();
+    this.initEvaluationHooks();
+
     this.initMemory();
     this.setupRoutes();
     this.setupWebSocket();
@@ -255,6 +266,23 @@ export class GatewayServer {
       broadcast: (event, payload) => this.broadcast(event, payload),
     });
     this.requestHandlers = createHandlerRegistry(this.buildHandlerContext());
+  }
+
+  private initEvaluationHooks(): void {
+    this.registerEvaluationHook(new AutoEvaluator(this.evaluationStore));
+    console.log("EvaluationHooks: AutoEvaluator registered");
+  }
+
+  registerEvaluationHook(hook: EvaluationHook): void {
+    this.evaluationHooks.push(hook);
+  }
+
+  private fireEvaluationHooks(outcomeLog: OutcomeLogEntry): void {
+    for (const hook of this.evaluationHooks) {
+      hook
+        .onOutcomeSaved(outcomeLog)
+        .catch((err) => console.error("EvaluationHook error:", err));
+    }
   }
 
   private initMemory(): void {
@@ -573,11 +601,12 @@ export class GatewayServer {
     stage: OutcomeStage,
     content: OutcomeContent,
   ): void {
+    const sessionId = this.logCollector.getSessionId();
     const logEntry: LogEntry = {
       id: crypto.randomUUID(),
       type: "outcome",
       timestamp: new Date().toISOString(),
-      sessionId: this.logCollector.getSessionId(),
+      sessionId,
       outcomeId,
       executionId,
       outcomeType,
@@ -586,6 +615,16 @@ export class GatewayServer {
     };
     this.logStore.save(logEntry);
     this.broadcast("logs.updated", { log: logEntry });
+
+    this.fireEvaluationHooks({
+      id: logEntry.id,
+      outcomeId,
+      executionId,
+      sessionId,
+      outcomeType,
+      outcomeStage: stage,
+      content,
+    });
   }
 
   private createLLMProvider(config: Config["llm"]): LLMProvider {
@@ -749,6 +788,7 @@ export class GatewayServer {
     this.scheduleStore.close();
     this.newsSourceStore.close();
     this.memoryStore?.close();
+    this.evaluationStore.close();
     this.wss.close();
     this.httpServer.close();
     this.sessionManager.close();

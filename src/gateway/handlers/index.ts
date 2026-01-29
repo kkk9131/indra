@@ -56,6 +56,18 @@ import {
   handleMemoryIndex,
   handleMemoryDelete,
 } from "./memory.js";
+import {
+  handleEvalTaskList,
+  handleEvalTaskGet,
+  handleEvalTaskCreate,
+  handleEvalTaskUpdate,
+  handleEvalTaskDelete,
+  handleEvalTrialList,
+  handleEvalTrialGet,
+  handleEvalRun,
+  handleEvalMetrics,
+  handleEvalGraderStatus,
+} from "./evaluation.js";
 import type { GatewayContext, RequestHandler } from "./context.js";
 
 export type { GatewayContext, RequestHandler } from "./context.js";
@@ -139,6 +151,13 @@ export function createHandlerRegistry(
         getErrorMessage: ctx.getErrorMessage,
       }
     : null;
+
+  const evaluationCtx = {
+    evaluation: ctx.services.evaluation,
+    sendSuccess: ctx.sendSuccess,
+    sendError: ctx.sendError,
+    getErrorMessage: ctx.getErrorMessage,
+  };
 
   return new Map<string, RequestHandler>([
     [
@@ -292,5 +311,43 @@ export function createHandlerRegistry(
           ],
         ] as [string, RequestHandler][])
       : []),
+    // Evaluation handlers
+    [
+      "eval.task.list",
+      (ws, frame) => handleEvalTaskList(evaluationCtx, ws, frame),
+    ],
+    [
+      "eval.task.get",
+      (ws, frame) => handleEvalTaskGet(evaluationCtx, ws, frame),
+    ],
+    [
+      "eval.task.create",
+      (ws, frame) => handleEvalTaskCreate(evaluationCtx, ws, frame),
+    ],
+    [
+      "eval.task.update",
+      (ws, frame) => handleEvalTaskUpdate(evaluationCtx, ws, frame),
+    ],
+    [
+      "eval.task.delete",
+      (ws, frame) => handleEvalTaskDelete(evaluationCtx, ws, frame),
+    ],
+    [
+      "eval.trial.list",
+      (ws, frame) => handleEvalTrialList(evaluationCtx, ws, frame),
+    ],
+    [
+      "eval.trial.get",
+      (ws, frame) => handleEvalTrialGet(evaluationCtx, ws, frame),
+    ],
+    ["eval.run", (ws, frame) => handleEvalRun(evaluationCtx, ws, frame)],
+    [
+      "eval.metrics",
+      (ws, frame) => handleEvalMetrics(evaluationCtx, ws, frame),
+    ],
+    [
+      "eval.grader.status",
+      (ws, frame) => handleEvalGraderStatus(evaluationCtx, ws, frame),
+    ],
   ]);
 }
