@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import * as sqliteVec from "sqlite-vec";
 
 import type {
   MemoryChunk,
@@ -8,16 +9,21 @@ import type {
   SearchResult,
   SearchOptions,
 } from "./types.js";
-import { MemoryChunkSchema, getMemoryBasePath } from "./types.js";
+import {
+  MemoryChunkSchema,
+  getMemoryBasePath,
+  getConfiguredDimensions,
+} from "./types.js";
 
 export class MemoryStore {
   private db: Database.Database;
   private vectorEnabled = false;
-  private vectorDimensions = 1536;
+  private vectorDimensions: number;
 
   constructor(dataDir?: string) {
     const dbPath = join(dataDir ?? getMemoryBasePath(), "sessions.db");
     this.db = new Database(dbPath);
+    this.vectorDimensions = getConfiguredDimensions();
     this.init();
   }
 
@@ -71,6 +77,9 @@ export class MemoryStore {
 
   private initVectorTable(): void {
     try {
+      // sqlite-vec 拡張をロード
+      sqliteVec.load(this.db);
+
       this.db.exec(`
         CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec USING vec0(
           chunk_id TEXT PRIMARY KEY,
@@ -78,9 +87,11 @@ export class MemoryStore {
         )
       `);
       this.vectorEnabled = true;
-    } catch {
+      console.log("MemoryStore: sqlite-vec loaded successfully");
+    } catch (error) {
       console.log(
         "MemoryStore: sqlite-vec not available, using keyword search only",
+        error instanceof Error ? error.message : "",
       );
       this.vectorEnabled = false;
     }

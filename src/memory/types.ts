@@ -2,10 +2,19 @@ import { z } from "zod";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+// ===== Constants =====
+
+const DEFAULT_EMBEDDING_DIMENSIONS = 1536;
+
 // ===== Paths =====
 
 export function getMemoryBasePath(): string {
   return join(homedir(), ".indra");
+}
+
+export function getConfiguredDimensions(): number {
+  const envValue = process.env.EMBEDDING_DIMENSIONS;
+  return envValue ? parseInt(envValue, 10) : DEFAULT_EMBEDDING_DIMENSIONS;
 }
 
 export function getTodayNotePath(): string {

@@ -10,6 +10,7 @@ import type {
   MultimodalMessage,
 } from "../../llm/index.js";
 import type { ChatService } from "../services/chat.js";
+import { getMemoryContextForSession } from "../../memory/index.js";
 
 export interface ChatHandlerContext {
   chat: ChatService;
@@ -27,6 +28,36 @@ const DEFAULT_AGENT_TOOLS = [
   "Skill",
 ];
 
+type ImageParam = {
+  data: string;
+  mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+};
+
+function buildMultimodalMessages(
+  history: Message[],
+  message: string,
+  images: ImageParam[],
+): MultimodalMessage[] {
+  const contentBlocks: ContentBlock[] = images.map((img) => ({
+    type: "image" as const,
+    source: {
+      type: "base64" as const,
+      media_type: img.mediaType,
+      data: img.data,
+    },
+  }));
+
+  contentBlocks.push({
+    type: "text",
+    text: message,
+  });
+
+  return [
+    ...history.map((m) => ({ role: m.role, content: m.content })),
+    { role: "user" as const, content: contentBlocks },
+  ];
+}
+
 export async function handleChatSend(
   ctx: ChatHandlerContext,
   ws: WebSocket,
@@ -40,10 +71,7 @@ export async function handleChatSend(
       history?: Message[];
       agentMode?: boolean;
       agentOptions?: AgentOptions;
-      images?: Array<{
-        data: string;
-        mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
-      }>;
+      images?: ImageParam[];
     };
 
     const config = ctx.chat.getConfig();
@@ -52,84 +80,42 @@ export async function handleChatSend(
     // Create AbortController for this request
     const abortController = ctx.chat.createAbortController(requestId);
 
+    // Get memory context and build system prompt
+    const memoryContext = await getMemoryContextForSession();
+    const systemPrompt = memoryContext
+      ? `${memoryContext}\n\n${config.llm.systemPrompt ?? ""}`
+      : (config.llm.systemPrompt ?? "");
+
     // Build messages with optional images
     const hasImages = params.images && params.images.length > 0;
+    const baseMessages: Message[] = [
+      ...(params.history ?? []),
+      { role: "user", content: params.message },
+    ];
 
-    if (hasImages) {
-      const contentBlocks: ContentBlock[] = [];
+    const useAgentMode = params.agentMode && provider.chatStreamWithAgent;
 
-      for (const img of params.images!) {
-        contentBlocks.push({
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: img.mediaType,
-            data: img.data,
-          },
-        });
-      }
+    if (useAgentMode) {
+      const messages = hasImages
+        ? buildMultimodalMessages(
+            params.history ?? [],
+            params.message,
+            params.images!,
+          )
+        : baseMessages;
 
-      contentBlocks.push({
-        type: "text",
-        text: params.message,
-      });
-
-      const multimodalMessages: MultimodalMessage[] = [
-        ...(params.history?.map((m) => ({
-          role: m.role,
-          content: m.content,
-        })) ?? []),
-        { role: "user" as const, content: contentBlocks },
-      ];
-
-      if (params.agentMode && provider.chatStreamWithAgent) {
-        await handleAgentChat(
-          ctx,
-          ws,
-          requestId,
-          provider,
-          multimodalMessages,
-          config.llm.systemPrompt ?? "",
-          params.agentOptions,
-          abortController.signal,
-        );
-      } else {
-        const messages: Message[] = [
-          ...(params.history ?? []),
-          { role: "user", content: params.message },
-        ];
-        await handleSimpleChat(
-          ws,
-          provider,
-          messages,
-          config.llm.systemPrompt ?? "",
-        );
-      }
+      await handleAgentChat(
+        ctx,
+        ws,
+        requestId,
+        provider,
+        messages,
+        systemPrompt,
+        params.agentOptions,
+        abortController.signal,
+      );
     } else {
-      const messages: Message[] = [
-        ...(params.history ?? []),
-        { role: "user", content: params.message },
-      ];
-
-      if (params.agentMode && provider.chatStreamWithAgent) {
-        await handleAgentChat(
-          ctx,
-          ws,
-          requestId,
-          provider,
-          messages,
-          config.llm.systemPrompt ?? "",
-          params.agentOptions,
-          abortController.signal,
-        );
-      } else {
-        await handleSimpleChat(
-          ws,
-          provider,
-          messages,
-          config.llm.systemPrompt ?? "",
-        );
-      }
+      await handleSimpleChat(ws, provider, baseMessages, systemPrompt);
     }
 
     ws.send(JSON.stringify(createEvent("chat.done", {})));

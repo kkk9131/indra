@@ -1,25 +1,33 @@
 import OpenAI from "openai";
 import type { EmbeddingProvider } from "./types.js";
+import { getConfiguredDimensions } from "./types.js";
 
 const BATCH_SIZE = 100;
-const DIMENSIONS = 1536;
+const DEFAULT_MODEL = "text-embedding-3-small";
 
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   private client: OpenAI;
-  readonly dimensions = DIMENSIONS;
-  readonly model = "text-embedding-3-small";
+  readonly dimensions: number;
+  readonly model: string;
 
-  constructor(apiKey?: string) {
+  constructor(options?: {
+    apiKey?: string;
+    baseURL?: string;
+    model?: string;
+    dimensions?: number;
+  }) {
     this.client = new OpenAI({
-      apiKey: apiKey ?? process.env.OPENAI_API_KEY,
+      apiKey: options?.apiKey ?? process.env.OPENAI_API_KEY,
+      baseURL: options?.baseURL ?? process.env.OPENAI_BASE_URL,
     });
+    this.model = options?.model ?? process.env.EMBEDDING_MODEL ?? DEFAULT_MODEL;
+    this.dimensions = options?.dimensions ?? getConfiguredDimensions();
   }
 
   async embed(text: string): Promise<number[]> {
     const response = await this.client.embeddings.create({
       model: this.model,
       input: text,
-      dimensions: this.dimensions,
     });
     return response.data[0].embedding;
   }
@@ -33,7 +41,6 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
       const response = await this.client.embeddings.create({
         model: this.model,
         input: batch,
-        dimensions: this.dimensions,
       });
       results.push(...response.data.map((d) => d.embedding));
     }
@@ -42,8 +49,12 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 }
 
 export class DummyEmbeddingProvider implements EmbeddingProvider {
-  readonly dimensions = DIMENSIONS;
+  readonly dimensions: number;
   readonly model = "dummy";
+
+  constructor() {
+    this.dimensions = getConfiguredDimensions();
+  }
 
   async embed(text: string): Promise<number[]> {
     return this.generateDummyVector(text);
@@ -66,9 +77,17 @@ export class DummyEmbeddingProvider implements EmbeddingProvider {
 
 export function createEmbeddingProvider(): EmbeddingProvider {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (apiKey) {
-    return new OpenAIEmbeddingProvider(apiKey);
+  const baseURL = process.env.OPENAI_BASE_URL;
+
+  if (apiKey || baseURL) {
+    const provider = new OpenAIEmbeddingProvider();
+    const source = baseURL ? `${baseURL}` : "OpenAI API";
+    console.log(
+      `Memory: Using ${provider.model} (${provider.dimensions}d) from ${source}`,
+    );
+    return provider;
   }
-  console.log("Memory: OPENAI_API_KEY not set, using dummy embedding provider");
+
+  console.log("Memory: No API configured, using dummy embedding provider");
   return new DummyEmbeddingProvider();
 }

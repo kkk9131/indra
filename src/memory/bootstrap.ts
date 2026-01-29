@@ -1,9 +1,47 @@
 import { join } from "node:path";
-import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
+import { existsSync, mkdirSync } from "node:fs";
 
 import type { BootstrapContext } from "./types.js";
 import { getMemoryBasePath } from "./types.js";
+
+const INITIAL_MEMORY_TEMPLATE = `# Long-Term Memory
+
+このファイルはエージェントの長期記憶です。
+重要な情報をここに記録してください。
+
+## ユーザー情報
+
+- 名前:
+- 好み:
+
+## プロジェクト設定
+
+## 重要な決定事項
+
+## 学習した知識
+`;
+
+export async function ensureMemoryFiles(): Promise<void> {
+  const basePath = getMemoryBasePath();
+  const memoryPath = join(basePath, "MEMORY.md");
+  const memoryDir = join(basePath, "memory");
+
+  // ~/.indra ディレクトリを作成
+  if (!existsSync(basePath)) {
+    mkdirSync(basePath, { recursive: true });
+  }
+
+  // ~/.indra/memory ディレクトリを作成
+  if (!existsSync(memoryDir)) {
+    mkdirSync(memoryDir, { recursive: true });
+  }
+
+  // MEMORY.md が存在しなければ初期テンプレートを作成
+  if (!existsSync(memoryPath)) {
+    await writeFile(memoryPath, INITIAL_MEMORY_TEMPLATE, "utf-8");
+  }
+}
 
 async function loadLongTermMemory(): Promise<string | null> {
   const memoryPath = join(getMemoryBasePath(), "MEMORY.md");

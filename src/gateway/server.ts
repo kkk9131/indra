@@ -52,6 +52,7 @@ import {
   MemorySearch,
   MemoryIndexer,
   createEmbeddingProvider,
+  ensureMemoryFiles,
 } from "../memory/index.js";
 
 function getErrorMessage(error: unknown): string {
@@ -239,6 +240,11 @@ export class GatewayServer {
 
   private initMemory(): void {
     try {
+      // MEMORY.md と memory/ ディレクトリが存在しなければ作成
+      ensureMemoryFiles().catch((err) =>
+        console.error("Failed to ensure memory files:", err),
+      );
+
       this.memoryStore = new MemoryStore();
       const embeddingProvider = createEmbeddingProvider();
       this.memorySearch = new MemorySearch(this.memoryStore, embeddingProvider);
