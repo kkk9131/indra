@@ -7,6 +7,7 @@ export const ApprovalStatusSchema = z.enum([
   "rejected",
   "posted",
   "scheduled",
+  "failed",
 ]);
 export type ApprovalStatus = z.infer<typeof ApprovalStatusSchema>;
 

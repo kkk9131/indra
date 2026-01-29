@@ -82,6 +82,16 @@ export class LogTimelineItemElement extends LitElement {
       color: #616161;
     }
 
+    .badge.execution {
+      background: rgba(156, 39, 176, 0.1);
+      color: #7b1fa2;
+    }
+
+    .badge.outcome {
+      background: rgba(255, 152, 0, 0.1);
+      color: #f57c00;
+    }
+
     .action-badge {
       display: inline-flex;
       align-items: center;
@@ -298,6 +308,15 @@ export class LogTimelineItemElement extends LitElement {
         "System"
       );
     }
+    if (this.log.type === "execution") {
+      const action = this.log.executionAction ?? "unknown";
+      return `Execution: ${action}`;
+    }
+    if (this.log.type === "outcome") {
+      const type = this.log.outcomeType ?? "unknown";
+      const stage = this.log.outcomeStage ?? "";
+      return `Outcome: ${type}${stage ? ` (${stage})` : ""}`;
+    }
     return "Log Entry";
   }
 
@@ -317,6 +336,41 @@ export class LogTimelineItemElement extends LitElement {
         this.log.response.substring(0, 100) +
         (this.log.response.length > 100 ? "..." : "")
       );
+    }
+    if (this.log.type === "execution") {
+      if (this.log.executionAction === "start" && this.log.executionConfig) {
+        return `Model: ${this.log.executionConfig.model}, Tools: ${this.log.executionConfig.tools.length}`;
+      }
+      if (this.log.executionAction === "end" && this.log.executionResult) {
+        const duration = (this.log.executionResult.duration / 1000).toFixed(1);
+        return `Duration: ${duration}s, Turns: ${this.log.executionResult.totalTurns}, Tokens: ${this.log.executionResult.totalTokens}`;
+      }
+      if (this.log.executionAction === "error" && this.log.executionError) {
+        return `Error: ${this.log.executionError.message}`;
+      }
+      return null;
+    }
+    if (this.log.type === "outcome" && this.log.outcomeContent) {
+      const content = this.log.outcomeContent;
+      if (content.posts && content.posts.length > 0) {
+        const firstPost = content.posts[0].text;
+        return (
+          firstPost.substring(0, 100) + (firstPost.length > 100 ? "..." : "")
+        );
+      }
+      if (content.report) {
+        return content.report.title;
+      }
+      if (content.finalResponse) {
+        return (
+          content.finalResponse.substring(0, 100) +
+          (content.finalResponse.length > 100 ? "..." : "")
+        );
+      }
+      if (content.files && content.files.length > 0) {
+        return `${content.files.length} file(s): ${content.files.map((f) => f.path).join(", ")}`;
+      }
+      return null;
     }
     return null;
   }
@@ -411,6 +465,114 @@ export class LogTimelineItemElement extends LitElement {
       `;
     }
 
+    if (this.log.type === "execution") {
+      return html`
+        ${this.log.executionId
+          ? html`
+              <div class="detail-row">
+                <div class="detail-label">Execution ID</div>
+                <div class="detail-value">${this.log.executionId}</div>
+              </div>
+            `
+          : null}
+        ${this.log.executionConfig
+          ? html`
+              <div class="detail-row">
+                <div class="detail-label">Config</div>
+                <div class="detail-value code">
+                  ${JSON.stringify(this.log.executionConfig, null, 2)}
+                </div>
+              </div>
+            `
+          : null}
+        ${this.log.input
+          ? html`
+              <div class="detail-row">
+                <div class="detail-label">Input</div>
+                <div class="detail-value">${this.log.input}</div>
+              </div>
+            `
+          : null}
+        ${this.log.executionResult
+          ? html`
+              <div class="detail-row">
+                <div class="detail-label">Result</div>
+                <div class="detail-value code">
+                  ${JSON.stringify(this.log.executionResult, null, 2)}
+                </div>
+              </div>
+            `
+          : null}
+        ${this.log.executionError
+          ? html`
+              <div class="detail-row">
+                <div class="detail-label">Error</div>
+                <div class="detail-value code">
+                  ${JSON.stringify(this.log.executionError, null, 2)}
+                </div>
+              </div>
+            `
+          : null}
+      `;
+    }
+
+    if (this.log.type === "outcome") {
+      return html`
+        ${this.log.outcomeId
+          ? html`
+              <div class="detail-row">
+                <div class="detail-label">Outcome ID</div>
+                <div class="detail-value">${this.log.outcomeId}</div>
+              </div>
+            `
+          : null}
+        ${this.log.outcomeType
+          ? html`
+              <div class="detail-row">
+                <div class="detail-label">Type</div>
+                <div class="detail-value">${this.log.outcomeType}</div>
+              </div>
+            `
+          : null}
+        ${this.log.outcomeStage
+          ? html`
+              <div class="detail-row">
+                <div class="detail-label">Stage</div>
+                <div class="detail-value">${this.log.outcomeStage}</div>
+              </div>
+            `
+          : null}
+        ${this.log.outcomeContent
+          ? html`
+              <div class="detail-row">
+                <div class="detail-label">Content</div>
+                <div class="detail-value code">
+                  ${JSON.stringify(this.log.outcomeContent, null, 2)}
+                </div>
+              </div>
+            `
+          : null}
+        ${this.log.previousOutcomeId
+          ? html`
+              <div class="detail-row">
+                <div class="detail-label">Previous Outcome ID</div>
+                <div class="detail-value">${this.log.previousOutcomeId}</div>
+              </div>
+            `
+          : null}
+        ${this.log.metadata
+          ? html`
+              <div class="detail-row">
+                <div class="detail-label">Metadata</div>
+                <div class="detail-value code">
+                  ${JSON.stringify(this.log.metadata, null, 2)}
+                </div>
+              </div>
+            `
+          : null}
+      `;
+    }
+
     return html``;
   }
 
@@ -449,6 +611,16 @@ export class LogTimelineItemElement extends LitElement {
               ${this.log.type === "system" && this.log.level
                 ? html`<span class="level-badge ${this.log.level}"
                     >${this.log.level}</span
+                  >`
+                : null}
+              ${this.log.type === "execution" && this.log.executionAction
+                ? html`<span class="action-badge"
+                    >${this.log.executionAction}</span
+                  >`
+                : null}
+              ${this.log.type === "outcome" && this.log.outcomeStage
+                ? html`<span class="action-badge"
+                    >${this.log.outcomeStage}</span
                   >`
                 : null}
               <span class="title">${this.getTitle()}</span>

@@ -206,78 +206,157 @@ async function handleAgentChat(
     throw new Error("Agent mode not supported by this provider");
   }
 
+  const executionId = crypto.randomUUID();
+  const startTime = Date.now();
+  let totalTurns = 0;
+  let wasCancelled = false;
+  let finalResponse = "";
+
+  const config = ctx.chat.getConfig();
+  const maxTurns = agentOptions?.maxTurns ?? 10;
+  const tools = agentOptions?.tools ?? DEFAULT_AGENT_TOOLS;
+  const permissionMode = agentOptions?.permissionMode ?? "acceptEdits";
+
+  // Extract input text from messages
+  const inputText =
+    messages.length > 0
+      ? typeof messages[messages.length - 1].content === "string"
+        ? (messages[messages.length - 1].content as string)
+        : "[multimodal input]"
+      : "";
+
+  // Log execution start
+  ctx.chat.saveExecutionLog(executionId, "start", {
+    config: {
+      model: config.llm.model,
+      maxTurns,
+      tools,
+      permissionMode,
+    },
+    input: inputText,
+  });
+
   const options: AgentChatOptions = {
     systemPrompt,
     agent: {
-      maxTurns: agentOptions?.maxTurns ?? 10,
-      tools: agentOptions?.tools ?? DEFAULT_AGENT_TOOLS,
-      permissionMode: agentOptions?.permissionMode ?? "acceptEdits",
+      maxTurns,
+      tools,
+      permissionMode,
     },
     signal,
   };
 
-  for await (const event of provider.chatStreamWithAgent(messages, options)) {
-    switch (event.type) {
-      case "text":
-        ws.send(
-          JSON.stringify(createEvent("chat.chunk", { text: event.text })),
-        );
-        ctx.chat.saveAgentLog("text", { text: event.text });
-        break;
-      case "tool_start":
-        ws.send(
-          JSON.stringify(
-            createEvent("agent.tool_start", {
-              tool: event.tool,
-              input: event.input,
-              toolUseId: event.toolUseId,
-            }),
-          ),
-        );
-        ctx.chat.saveAgentLog("tool_start", {
-          tool: event.tool,
-          toolInput: event.input,
-        });
-        break;
-      case "tool_result":
-        ws.send(
-          JSON.stringify(
-            createEvent("agent.tool_result", {
-              tool: event.tool,
-              result: event.result,
-              toolUseId: event.toolUseId,
-            }),
-          ),
-        );
-        ctx.chat.saveAgentLog("tool_result", {
-          tool: event.tool,
-          toolResult: event.result,
-        });
-        break;
-      case "turn_complete":
-        ws.send(
-          JSON.stringify(
-            createEvent("agent.turn_complete", {
-              turnNumber: event.turnNumber,
-            }),
-          ),
-        );
-        ctx.chat.saveAgentLog("turn_complete", {
-          turnNumber: event.turnNumber,
-        });
-        break;
-      case "cancelled":
-        ws.send(
-          JSON.stringify(
-            createEvent("chat.cancelled", {
-              requestId,
-              reason: event.reason,
-            }),
-          ),
-        );
-        return;
-      case "done":
-        break;
+  try {
+    for await (const event of provider.chatStreamWithAgent(messages, options)) {
+      switch (event.type) {
+        case "text":
+          ws.send(
+            JSON.stringify(createEvent("chat.chunk", { text: event.text })),
+          );
+          ctx.chat.saveAgentLog("text", { text: event.text });
+          break;
+        case "tool_start":
+          ws.send(
+            JSON.stringify(
+              createEvent("agent.tool_start", {
+                tool: event.tool,
+                input: event.input,
+                toolUseId: event.toolUseId,
+              }),
+            ),
+          );
+          ctx.chat.saveAgentLog("tool_start", {
+            tool: event.tool,
+            toolInput: event.input,
+          });
+          break;
+        case "tool_result":
+          ws.send(
+            JSON.stringify(
+              createEvent("agent.tool_result", {
+                tool: event.tool,
+                result: event.result,
+                toolUseId: event.toolUseId,
+              }),
+            ),
+          );
+          ctx.chat.saveAgentLog("tool_result", {
+            tool: event.tool,
+            toolResult: event.result,
+          });
+          break;
+        case "turn_complete":
+          totalTurns = event.turnNumber;
+          ws.send(
+            JSON.stringify(
+              createEvent("agent.turn_complete", {
+                turnNumber: event.turnNumber,
+              }),
+            ),
+          );
+          ctx.chat.saveAgentLog("turn_complete", {
+            turnNumber: event.turnNumber,
+          });
+          break;
+        case "cancelled":
+          wasCancelled = true;
+          ws.send(
+            JSON.stringify(
+              createEvent("chat.cancelled", {
+                requestId,
+                reason: event.reason,
+              }),
+            ),
+          );
+          // Log execution end (cancelled)
+          ctx.chat.saveExecutionLog(executionId, "end", {
+            result: {
+              success: false,
+              totalTurns,
+              totalTokens: 0, // TODO: track token usage
+              duration: Date.now() - startTime,
+            },
+          });
+          return;
+        case "done":
+          finalResponse = event.result ?? "";
+          break;
+      }
     }
+
+    // Log execution end (success)
+    if (!wasCancelled) {
+      // Save chat outcome log before execution end
+      if (finalResponse) {
+        const outcomeId = crypto.randomUUID();
+        ctx.chat.saveOutcomeLog(outcomeId, executionId, "chat", "final", {
+          finalResponse,
+        });
+      }
+
+      ctx.chat.saveExecutionLog(executionId, "end", {
+        result: {
+          success: true,
+          totalTurns,
+          totalTokens: 0, // TODO: track token usage
+          duration: Date.now() - startTime,
+        },
+      });
+    }
+  } catch (error) {
+    // Log execution error
+    ctx.chat.saveExecutionLog(executionId, "error", {
+      error: {
+        code: (error as Error).name ?? "UNKNOWN_ERROR",
+        message: (error as Error).message ?? "Unknown error",
+      },
+      result: {
+        success: false,
+        totalTurns,
+        totalTokens: 0,
+        duration: Date.now() - startTime,
+      },
+    });
+    throw error;
   }
 }

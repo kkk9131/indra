@@ -30,7 +30,19 @@ import {
   type CredentialStore,
 } from "../auth/index.js";
 import { DiscordBot, commands as discordCommands } from "../discord/index.js";
-import { LogStore, LogCollector, type AgentActionType } from "../logs/index.js";
+import {
+  LogStore,
+  LogCollector,
+  type AgentActionType,
+  type ExecutionAction,
+  type ExecutionConfig,
+  type ExecutionResult,
+  type ExecutionError,
+  type OutcomeType,
+  type OutcomeStage,
+  type OutcomeContent,
+  type LogEntry,
+} from "../logs/index.js";
 import type { ApprovalItem } from "../approval/types.js";
 import {
   AnalyticsScheduler,
@@ -233,6 +245,9 @@ export class GatewayServer {
       memoryIndexer: this.memoryIndexer,
       createLLMProvider: (config) => this.createLLMProvider(config),
       saveAgentLog: (action, params) => this.saveAgentLog(action, params),
+      saveExecutionLog: (executionId, action, params) =>
+        this.saveExecutionLog(executionId, action, params),
+      saveOutcomeLog: (...args) => this.saveOutcomeLog(...args),
       broadcast: (event, payload) => this.broadcast(event, payload),
     });
     this.requestHandlers = createHandlerRegistry(this.buildHandlerContext());
@@ -439,6 +454,56 @@ export class GatewayServer {
     );
     this.logStore.save(logEntry);
     // ブロードキャストを追加
+    this.broadcast("logs.updated", { log: logEntry });
+  }
+
+  /** Helper to save execution logs */
+  private saveExecutionLog(
+    executionId: string,
+    action: ExecutionAction,
+    params: {
+      config?: ExecutionConfig;
+      input?: string;
+      result?: ExecutionResult;
+      error?: ExecutionError;
+    },
+  ): void {
+    const logEntry: LogEntry = {
+      id: crypto.randomUUID(),
+      type: "execution",
+      timestamp: new Date().toISOString(),
+      sessionId: this.logCollector.getSessionId(),
+      executionId,
+      executionAction: action,
+      executionConfig: params.config ?? null,
+      input: params.input ?? null,
+      executionResult: params.result ?? null,
+      executionError: params.error ?? null,
+    };
+    this.logStore.save(logEntry);
+    this.broadcast("logs.updated", { log: logEntry });
+  }
+
+  /** Helper to save outcome logs */
+  private saveOutcomeLog(
+    outcomeId: string,
+    executionId: string,
+    outcomeType: OutcomeType,
+    stage: OutcomeStage,
+    content: OutcomeContent,
+  ): void {
+    const logEntry: LogEntry = {
+      id: crypto.randomUUID(),
+      type: "outcome",
+      timestamp: new Date().toISOString(),
+      sessionId: this.logCollector.getSessionId(),
+      outcomeId,
+      executionId,
+      outcomeType,
+      outcomeStage: stage,
+      outcomeContent: content,
+    };
+    this.logStore.save(logEntry);
     this.broadcast("logs.updated", { log: logEntry });
   }
 

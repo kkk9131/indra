@@ -14,6 +14,8 @@ import type {
   CreateApprovalItem,
 } from "./types.js";
 import { ApprovalItemSchema } from "./types.js";
+import { LogCollector } from "../logs/collector.js";
+import type { OutcomeContent } from "../logs/types.js";
 
 const ALL_STATUSES: readonly ApprovalStatus[] = [
   "pending",
@@ -160,20 +162,71 @@ export class ApprovalQueue {
     return updatedItem;
   }
 
-  approve(id: string): ApprovalItem | null {
-    return this.update(id, { status: "approved" });
+  approve(id: string, previousOutcomeId?: string): ApprovalItem | null {
+    const result = this.update(id, { status: "approved" });
+    if (result) {
+      // OutcomeLog (final) 記録
+      const outcomeId = crypto.randomUUID();
+      const collector = new LogCollector({ sessionId: id });
+      const outcomeContent: OutcomeContent = {
+        posts: [
+          {
+            text: result.content.text,
+            hashtags: [],
+          },
+        ],
+      };
+      collector.addOutcomeLog(
+        outcomeId,
+        "", // executionIdは承認時には不明
+        "xpost",
+        "final",
+        outcomeContent,
+        previousOutcomeId,
+        { approvalId: id, status: "approved" },
+      );
+    }
+    return result;
   }
 
   reject(id: string): ApprovalItem | null {
     return this.update(id, { status: "rejected" });
   }
 
-  markPosted(id: string, postId: string, postUrl: string): ApprovalItem | null {
-    return this.update(id, { status: "posted", postId, postUrl });
+  markPosted(
+    id: string,
+    postId: string,
+    postUrl: string,
+    previousOutcomeId?: string,
+  ): ApprovalItem | null {
+    const result = this.update(id, { status: "posted", postId, postUrl });
+    if (result) {
+      // OutcomeLog (final) 記録 - 投稿完了時
+      const outcomeId = crypto.randomUUID();
+      const collector = new LogCollector({ sessionId: id });
+      const outcomeContent: OutcomeContent = {
+        posts: [
+          {
+            text: result.content.text,
+            hashtags: [],
+          },
+        ],
+      };
+      collector.addOutcomeLog(
+        outcomeId,
+        "", // executionIdは投稿時には不明
+        "xpost",
+        "final",
+        outcomeContent,
+        previousOutcomeId,
+        { approvalId: id, status: "posted", postId, postUrl },
+      );
+    }
+    return result;
   }
 
   markFailed(id: string, error: string): ApprovalItem | null {
-    return this.update(id, { error });
+    return this.update(id, { status: "failed", error });
   }
 
   schedule(id: string, scheduledAt: string): ApprovalItem | null {

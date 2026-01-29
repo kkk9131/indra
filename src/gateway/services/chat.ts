@@ -1,6 +1,15 @@
 import type { Config, ConfigManager } from "../../config/index.js";
 import type { LLMProvider } from "../../llm/index.js";
-import type { AgentActionType } from "../../logs/index.js";
+import type {
+  AgentActionType,
+  ExecutionAction,
+  ExecutionConfig,
+  ExecutionError,
+  ExecutionResult,
+  OutcomeContent,
+  OutcomeStage,
+  OutcomeType,
+} from "../../logs/index.js";
 
 export interface AgentLogParams {
   tool?: string;
@@ -10,6 +19,13 @@ export interface AgentLogParams {
   text?: string;
 }
 
+export interface ExecutionLogParams {
+  config?: ExecutionConfig;
+  input?: string;
+  result?: ExecutionResult;
+  error?: ExecutionError;
+}
+
 export interface ChatService {
   getConfig: () => Config;
   createProvider: () => LLMProvider;
@@ -17,12 +33,36 @@ export interface ChatService {
   getAbortController: (requestId: string) => AbortController | undefined;
   clearAbortController: (requestId: string) => void;
   saveAgentLog: (action: AgentActionType, params: AgentLogParams) => void;
+  saveExecutionLog: (
+    executionId: string,
+    action: ExecutionAction,
+    params: ExecutionLogParams,
+  ) => void;
+  saveOutcomeLog: (
+    outcomeId: string,
+    executionId: string,
+    outcomeType: OutcomeType,
+    stage: OutcomeStage,
+    content: OutcomeContent,
+  ) => void;
 }
 
 interface ChatServiceDeps {
   configManager: ConfigManager;
   createLLMProvider: (config: Config["llm"]) => LLMProvider;
   saveAgentLog: (action: AgentActionType, params: AgentLogParams) => void;
+  saveExecutionLog: (
+    executionId: string,
+    action: ExecutionAction,
+    params: ExecutionLogParams,
+  ) => void;
+  saveOutcomeLog: (
+    outcomeId: string,
+    executionId: string,
+    outcomeType: OutcomeType,
+    stage: OutcomeStage,
+    content: OutcomeContent,
+  ) => void;
 }
 
 export function createChatService(deps: ChatServiceDeps): ChatService {
@@ -41,5 +81,7 @@ export function createChatService(deps: ChatServiceDeps): ChatService {
       abortControllers.delete(requestId);
     },
     saveAgentLog: deps.saveAgentLog,
+    saveExecutionLog: deps.saveExecutionLog,
+    saveOutcomeLog: deps.saveOutcomeLog,
   };
 }

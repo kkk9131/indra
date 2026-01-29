@@ -4,7 +4,7 @@ import {
   type Content,
   type Platform,
 } from "../../connectors/index.js";
-import type { CredentialStore } from "../../auth/index.js";
+import type { CredentialStore, XOAuth2Handler } from "../../auth/index.js";
 import type { ApprovalItem } from "../../approval/types.js";
 import type { ApprovalQueue, ApprovalStatus } from "../../approval/index.js";
 import type { LLMProvider } from "../../llm/index.js";
@@ -36,6 +36,7 @@ interface PostServiceDeps {
   approvalQueue: ApprovalQueue;
   credentialStore: CredentialStore;
   xConnector: XConnector | null;
+  xOAuth2Handler: XOAuth2Handler | null;
   createLLMProvider: (config: Config["llm"]) => LLMProvider;
 }
 
@@ -85,8 +86,24 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
         };
       }
 
-      const xCreds = deps.credentialStore.getXCredentials();
+      let xCreds = deps.credentialStore.getXCredentials();
       let connector: XConnector;
+
+      // Try to refresh expired tokens
+      if (xCreds && deps.credentialStore.isXTokenExpired()) {
+        if (deps.xOAuth2Handler && xCreds.refreshToken) {
+          try {
+            const newTokens = await deps.xOAuth2Handler.refreshTokens(
+              xCreds.refreshToken,
+            );
+            deps.credentialStore.setXCredentials(newTokens, xCreds.username);
+            xCreds = deps.credentialStore.getXCredentials();
+          } catch (refreshError) {
+            console.error("Token refresh failed:", refreshError);
+            // Continue to fallback options
+          }
+        }
+      }
 
       if (xCreds && !deps.credentialStore.isXTokenExpired()) {
         connector = new XConnector({ oauth2AccessToken: xCreds.accessToken });
@@ -95,7 +112,7 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
       } else {
         const failedItem = deps.approvalQueue.markFailed(
           id,
-          "X connector not configured",
+          "X credentials not available or expired",
         );
         return {
           ok: false,

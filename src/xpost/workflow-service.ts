@@ -13,6 +13,8 @@ import type {
   GeneratedPost,
   PostEvaluation,
 } from "./types.js";
+import { LogCollector } from "../logs/collector.js";
+import type { OutcomeContent } from "../logs/types.js";
 
 interface WorkflowOutput {
   posts: Array<{
@@ -191,12 +193,36 @@ export class XPostWorkflowService {
 
       emitProgress("completed", "生成完了", 100);
 
+      const processingTime = Date.now() - startTime;
+
+      // OutcomeLog (draft) 記録
+      const outcomeId = crypto.randomUUID();
+      const executionId = crypto.randomUUID(); // 簡易的に生成（将来的にはcontext経由で渡す）
+      const outcomeContent: OutcomeContent = {
+        posts: posts.map((p) => ({
+          text: p.text,
+          hashtags: [], // ハッシュタグ抽出は将来拡張
+          score: p.score,
+        })),
+      };
+      // logCollectorがない場合は新規作成（将来的にはDI）
+      const collector = new LogCollector({ sessionId: article.id });
+      collector.addOutcomeLog(
+        outcomeId,
+        executionId,
+        "xpost",
+        "draft",
+        outcomeContent,
+        undefined,
+        { articleId: article.id, processingTime },
+      );
+
       return {
         success: true,
         articleId: article.id,
         bestPost,
         allPosts: posts,
-        processingTime: Date.now() - startTime,
+        processingTime,
       };
     } catch (error) {
       const errorMessage =

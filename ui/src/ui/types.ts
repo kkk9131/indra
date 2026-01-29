@@ -90,7 +90,7 @@ export type NewsSource =
 
 // Log types - these mirror the backend types in src/logs/types.ts
 // Keeping separate to avoid cross-package dependencies
-export type LogType = "agent" | "prompt" | "system";
+export type LogType = "agent" | "prompt" | "system" | "execution" | "outcome";
 export type AgentActionType =
   | "text"
   | "tool_start"
@@ -114,6 +114,38 @@ export interface LogEntry {
   model?: string;
   level?: "info" | "warn" | "error";
   message?: string;
+  // execution log
+  executionId?: string;
+  executionAction?: "start" | "end" | "error";
+  executionConfig?: {
+    model: string;
+    maxTurns: number;
+    tools: string[];
+    permissionMode: string;
+  };
+  input?: string;
+  executionResult?: {
+    success: boolean;
+    totalTurns: number;
+    totalTokens: number;
+    duration: number;
+  };
+  executionError?: {
+    code: string;
+    message: string;
+  };
+  // outcome log
+  outcomeId?: string;
+  outcomeType?: "xpost" | "report" | "chat" | "file" | "other";
+  outcomeStage?: "draft" | "final";
+  outcomeContent?: {
+    posts?: Array<{ text: string; hashtags: string[]; score?: number }>;
+    report?: { title: string; summary: string };
+    finalResponse?: string;
+    files?: Array<{ path: string; hash: string; size: number }>;
+  };
+  previousOutcomeId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export type LogSortOrder = "newest" | "oldest";
@@ -143,6 +175,24 @@ export function formatLogForExport(log: LogEntry): Record<string, unknown> {
     case "system":
       if (log.level) base.level = log.level;
       if (log.message) base.message = log.message;
+      break;
+    case "execution":
+      if (log.executionId) base.executionId = log.executionId;
+      if (log.executionAction) base.action = log.executionAction;
+      if (log.executionConfig) base.config = log.executionConfig;
+      if (log.input) base.input = log.input;
+      if (log.executionResult) base.result = log.executionResult;
+      if (log.executionError) base.error = log.executionError;
+      if (log.sessionId) base.session = log.sessionId;
+      break;
+    case "outcome":
+      if (log.outcomeId) base.outcomeId = log.outcomeId;
+      if (log.outcomeType) base.outcomeType = log.outcomeType;
+      if (log.outcomeStage) base.stage = log.outcomeStage;
+      if (log.outcomeContent) base.content = log.outcomeContent;
+      if (log.previousOutcomeId) base.previousOutcomeId = log.previousOutcomeId;
+      if (log.metadata) base.metadata = log.metadata;
+      if (log.sessionId) base.session = log.sessionId;
       break;
   }
 

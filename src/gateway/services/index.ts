@@ -4,7 +4,7 @@ import type { CredentialStore, XOAuth2Handler } from "../../auth/index.js";
 import type { XConnector } from "../../connectors/index.js";
 import type { DiscordBot } from "../../discord/index.js";
 import type { LLMProvider } from "../../llm/index.js";
-import type { LogStore, AgentActionType } from "../../logs/index.js";
+import type { LogStore } from "../../logs/index.js";
 import type {
   NewsScheduler,
   NewsSourceStore,
@@ -14,11 +14,7 @@ import type { AnalyticsScheduler } from "../../analytics/index.js";
 import type { SchedulerManager } from "../../scheduler/index.js";
 import type { XPostWorkflowService } from "../../xpost/index.js";
 
-import {
-  createChatService,
-  type AgentLogParams,
-  type ChatService,
-} from "./chat.js";
+import { createChatService, type ChatService } from "./chat.js";
 import { createConfigService, type ConfigService } from "./config.js";
 import { createPostService, type PostService } from "./post.js";
 import { createAuthService, type AuthService } from "./auth.js";
@@ -89,7 +85,9 @@ interface GatewayServiceDeps {
   memorySearch: MemorySearch | null;
   memoryIndexer: MemoryIndexer | null;
   createLLMProvider: (config: Config["llm"]) => LLMProvider;
-  saveAgentLog: (action: AgentActionType, params: AgentLogParams) => void;
+  saveAgentLog: ChatService["saveAgentLog"];
+  saveExecutionLog: ChatService["saveExecutionLog"];
+  saveOutcomeLog: ChatService["saveOutcomeLog"];
   broadcast: (event: string, payload: unknown) => void;
 }
 
@@ -101,12 +99,15 @@ export function createGatewayServices(
     configManager: deps.configManager,
     createLLMProvider: deps.createLLMProvider,
     saveAgentLog: deps.saveAgentLog,
+    saveExecutionLog: deps.saveExecutionLog,
+    saveOutcomeLog: deps.saveOutcomeLog,
   });
   const post = createPostService({
     configManager: deps.configManager,
     approvalQueue: deps.approvalQueue,
     credentialStore: deps.credentialStore,
     xConnector: deps.xConnector,
+    xOAuth2Handler: deps.xOAuth2Handler,
     createLLMProvider: deps.createLLMProvider,
   });
   const auth = createAuthService({

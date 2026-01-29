@@ -1,4 +1,15 @@
-import type { LogEntry, AgentActionType } from "./types.js";
+import type {
+  LogEntry,
+  LogType,
+  AgentActionType,
+  ExecutionAction,
+  ExecutionConfig,
+  ExecutionResult,
+  ExecutionError,
+  OutcomeType,
+  OutcomeStage,
+  OutcomeContent,
+} from "./types.js";
 
 export interface LogCollectorOptions {
   sessionId: string;
@@ -77,11 +88,53 @@ export class LogCollector {
     });
   }
 
+  addExecutionLog(
+    executionId: string,
+    action: ExecutionAction,
+    params: {
+      config?: ExecutionConfig;
+      input?: string;
+      result?: ExecutionResult;
+      error?: ExecutionError;
+    } = {},
+  ): LogEntry {
+    return this.addEntry({
+      type: "execution",
+      executionId,
+      executionAction: action,
+      executionConfig: params.config,
+      input: params.input,
+      executionResult: params.result,
+      executionError: params.error,
+    });
+  }
+
+  addOutcomeLog(
+    outcomeId: string,
+    executionId: string,
+    outcomeType: OutcomeType,
+    stage: OutcomeStage,
+    content: OutcomeContent,
+    previousOutcomeId?: string,
+    metadata?: Record<string, unknown>,
+  ): LogEntry {
+    return this.addEntry({
+      type: "outcome",
+      outcomeId,
+      executionId,
+      outcomeType,
+      outcomeStage: stage,
+      outcomeContent: content,
+      previousOutcomeId,
+      metadata,
+    });
+  }
+
   getLogs(): LogEntry[] {
     return [...this.logs];
   }
 
-  getLogsByType(type: "agent" | "prompt" | "system"): LogEntry[] {
+  getLogsByType(type: LogType): LogEntry[] {
     return this.logs.filter((log) => log.type === type);
   }
 

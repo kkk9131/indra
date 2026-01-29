@@ -1,5 +1,7 @@
 import cron from "node-cron";
 
+import { LogCollector } from "../logs/collector.js";
+import type { OutcomeContent } from "../logs/types.js";
 import { fetchGitHubChangelog } from "./changelog-fetcher.js";
 import { fetchAnthropicNews, filterLast24Hours } from "./fetcher.js";
 import { NewsStore } from "./store.js";
@@ -71,6 +73,31 @@ export class NewsScheduler {
       const allArticles = [...filtered, ...changelogArticles];
       await this.store.save(allArticles);
       this.onUpdate(allArticles);
+
+      // OutcomeLog記録（各記事ごと）
+      const collector = new LogCollector({ sessionId: "news-scheduler" });
+      for (const article of allArticles) {
+        const outcomeId = crypto.randomUUID();
+        const outcomeContent: OutcomeContent = {
+          report: {
+            title: article.title,
+            summary: article.summary ?? "",
+          },
+        };
+        collector.addOutcomeLog(
+          outcomeId,
+          "", // schedulerにはexecutionIdなし
+          "report",
+          "final", // schedulerの場合はdraftなしでfinal
+          outcomeContent,
+          undefined,
+          {
+            articleId: article.id,
+            source: article.source,
+            url: article.url,
+          },
+        );
+      }
 
       console.log(
         `NewsScheduler: Fetched and saved ${allArticles.length} articles (${filtered.length} news, ${changelogArticles.length} changelog)`,
