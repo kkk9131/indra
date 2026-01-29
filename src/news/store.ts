@@ -41,6 +41,20 @@ export class NewsStore {
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_news_contentHash ON news_articles(contentHash)
     `);
+
+    // マイグレーション: log-analysis → indra-log
+    this.migrateSource("log-analysis", "indra-log");
+  }
+
+  private migrateSource(oldSource: string, newSource: string): void {
+    const result = this.db
+      .prepare(`UPDATE news_articles SET source = ? WHERE source = ?`)
+      .run(newSource, oldSource);
+    if (result.changes > 0) {
+      console.log(
+        `NewsStore: Migrated ${result.changes} articles from ${oldSource} to ${newSource}`,
+      );
+    }
   }
 
   private addColumnIfNotExists(columnName: string, columnType: string): void {

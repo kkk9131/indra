@@ -330,10 +330,16 @@ export class NewsPageElement extends LitElement {
           Blog
         </button>
         <button
-          class="tab ${this.filter === "log-analysis" ? "active" : ""}"
-          @click="${() => this.handleTabClick("log-analysis")}"
+          class="tab ${this.filter === "news-report" ? "active" : ""}"
+          @click="${() => this.handleTabClick("news-report")}"
         >
-          Reports
+          News Report
+        </button>
+        <button
+          class="tab ${this.filter === "indra-log" ? "active" : ""}"
+          @click="${() => this.handleTabClick("indra-log")}"
+        >
+          Indra Log
         </button>
         <button
           class="tab ${this.filter === "github-changelog" ? "active" : ""}"

@@ -1,5 +1,5 @@
 /** レポートソースの種類 */
-export type ReportSource = "log-analysis";
+export type ReportSource = "indra-log" | "news-report";
 
 /** 日次統計 */
 export interface DailyStats {

@@ -1,5 +1,7 @@
 import type { APIEmbed } from "discord.js";
 import type { DailyReport } from "./types.js";
+import type { NewsReport } from "./news-report-scheduler.js";
+import type { NotificationData } from "../discord/types.js";
 
 /**
  * DailyReportからDiscord Embedを生成
@@ -96,4 +98,104 @@ function formatDate(isoString: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/**
+ * NewsReportからDiscord Embedを生成
+ */
+export function createNewsReportEmbed(report: NewsReport): APIEmbed {
+  // 色は常にブルー系（情報提供）
+  const color = 0x3498db;
+
+  const fields: APIEmbed["fields"] = [];
+
+  // Top 3 アイテムをフィールドとして追加
+  for (const item of report.topItems) {
+    const icon = item.type === "news" ? "📰" : "🐦";
+    const scoreBar =
+      "█".repeat(Math.floor(item.score / 10)) +
+      "░".repeat(10 - Math.floor(item.score / 10));
+
+    fields.push({
+      name: `${item.rank}. ${icon} ${item.title.substring(0, 50)}`,
+      value: [
+        `**スコア:** ${item.score.toFixed(1)} [${scoreBar}]`,
+        `**重要度:** ${item.importance} | **新規性:** ${item.novelty} | **影響度:** ${item.impact}`,
+        `📝 ${item.reason}`,
+      ].join("\n"),
+      inline: false,
+    });
+  }
+
+  // レポートが空の場合
+  if (report.topItems.length === 0) {
+    fields.push({
+      name: "📭 No Items",
+      value: "評価対象のニュース・投稿がありませんでした。",
+      inline: false,
+    });
+  }
+
+  const embed: APIEmbed = {
+    title: `📊 ${report.title}`,
+    description: report.summary.substring(0, 2000),
+    color,
+    fields,
+    footer: {
+      text: `Period: ${formatDate(report.periodStart)} - ${formatDate(report.periodEnd)}`,
+    },
+    timestamp: report.generatedAt,
+  };
+
+  return embed;
+}
+
+/**
+ * 通知用のDiscord Embedを生成
+ */
+export function createNotificationEmbed(data: NotificationData): APIEmbed {
+  let color: number;
+  let icon: string;
+
+  switch (data.type) {
+    case "approval_pending":
+      color = 0x3498db; // 青
+      icon = "📝";
+      break;
+    case "task_executed":
+      color = 0x28a745; // 緑
+      icon = "✅";
+      break;
+    case "error":
+      color = 0xdc3545; // 赤
+      icon = "❌";
+      break;
+  }
+
+  const fields: APIEmbed["fields"] = [];
+
+  if (data.platform) {
+    fields.push({ name: "Platform", value: data.platform, inline: true });
+  }
+  if (data.itemId) {
+    fields.push({ name: "ID", value: data.itemId, inline: true });
+  }
+  if (data.content) {
+    fields.push({
+      name: "Content",
+      value: data.content.slice(0, 1024),
+      inline: false,
+    });
+  }
+  if (data.error) {
+    fields.push({ name: "Error", value: data.error, inline: false });
+  }
+
+  return {
+    title: `${icon} ${data.title}`,
+    description: data.description,
+    color,
+    fields: fields.length > 0 ? fields : undefined,
+    timestamp: new Date().toISOString(),
+  };
 }

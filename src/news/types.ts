@@ -3,7 +3,8 @@ import { z } from "zod";
 export type NewsSource =
   | "claude-code"
   | "blog"
-  | "log-analysis"
+  | "indra-log"
+  | "news-report"
   | "x-account"
   | "github-changelog";
 export type NewsSourceType = "x-account" | "rss" | "web" | "github";
@@ -85,7 +86,8 @@ export const NewsArticleSchema = z.object({
   source: z.enum([
     "claude-code",
     "blog",
-    "log-analysis",
+    "indra-log",
+    "news-report",
     "x-account",
     "github-changelog",
   ]),

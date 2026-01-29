@@ -209,7 +209,7 @@ export class AnalyticsScheduler {
       const now = new Date();
       const fallbackReport: DailyReport = {
         id: randomUUID(),
-        source: "log-analysis",
+        source: "indra-log",
         title: `Daily Log Report - ${now.toLocaleDateString("ja-JP")}`,
         summary: "スキルパイプラインでエラーが発生しました。",
         stats: {
@@ -240,7 +240,7 @@ export class AnalyticsScheduler {
 
       const fallbackArticle: NewsArticle = {
         id: fallbackReport.id,
-        source: "log-analysis",
+        source: "indra-log",
         title: fallbackReport.title,
         summary: fallbackReport.summary,
         url: `#report/${fallbackReport.id}`,

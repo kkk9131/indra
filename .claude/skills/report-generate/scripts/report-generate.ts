@@ -49,7 +49,7 @@ function generateReport(input: ReportInput): DailyReport {
 
   return {
     id,
-    source: "log-analysis",
+    source: "indra-log",
     title: `Daily Log Report - ${now.toLocaleDateString("ja-JP")}`,
     summary: input.analysis.summary,
     stats: input.stats,
@@ -73,7 +73,7 @@ function reportToArticle(report: DailyReport): NewsArticle {
 
   return {
     id: report.id,
-    source: "log-analysis",
+    source: "indra-log",
     title: report.title,
     summary: fullSummary,
     url: `#report/${report.id}`,

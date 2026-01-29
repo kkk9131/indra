@@ -46,8 +46,11 @@ import {
 import type { ApprovalItem } from "../approval/types.js";
 import {
   AnalyticsScheduler,
+  NewsReportScheduler,
   createReportEmbed,
+  createNewsReportEmbed,
   type DailyReport,
+  type NewsReport,
 } from "../analytics/index.js";
 import type { NewsArticle } from "../news/types.js";
 import {
@@ -155,6 +158,7 @@ export class GatewayServer {
   private logStore: LogStore;
   private logCollector: LogCollector;
   private analyticsScheduler: AnalyticsScheduler | null = null;
+  private newsReportScheduler: NewsReportScheduler | null = null;
   private schedulerManager: SchedulerManager;
   private scheduleStore: ScheduleStore;
   private taskRegistry: TaskRegistry;
@@ -284,6 +288,14 @@ export class GatewayServer {
       "initAnalytics: ZAI_API_KEY =",
       process.env.ZAI_API_KEY ? "set" : "not set",
     );
+    console.log(
+      "initAnalytics: DISCORD_REPORT_CHANNEL_ID =",
+      process.env.DISCORD_REPORT_CHANNEL_ID ?? "not set",
+    );
+    console.log(
+      "initAnalytics: DISCORD_GENERAL_CHANNEL_ID =",
+      process.env.DISCORD_GENERAL_CHANNEL_ID ?? "not set",
+    );
     if (!process.env.ZAI_API_KEY) {
       console.log("AnalyticsScheduler: Skipped (ZAI_API_KEY not set)");
       return;
@@ -297,6 +309,18 @@ export class GatewayServer {
       // AnalyticsSchedulerの固定cronは使わず、SchedulerManagerで管理
     } catch (error) {
       console.error("Failed to initialize analytics:", error);
+    }
+
+    // NewsReportSchedulerの初期化
+    try {
+      this.newsReportScheduler = new NewsReportScheduler(
+        this.newsStore,
+        this.approvalQueue,
+        (report, article) => this.handleNewsReportGenerated(report, article),
+      );
+      console.log("NewsReportScheduler: Initialized successfully");
+    } catch (error) {
+      console.error("Failed to initialize news report scheduler:", error);
     }
   }
 
@@ -320,6 +344,16 @@ export class GatewayServer {
       });
     }
 
+    if (this.newsReportScheduler) {
+      this.schedulerManager.registerTaskType({
+        type: "news-report",
+        name: "ニュースレポート",
+        description: "ニュース/投稿の評価Top3レポートを生成",
+        execute: () => this.newsReportScheduler!.run().then(() => {}),
+        defaultCron: "0 6 * * *",
+      });
+    }
+
     // デフォルトタスクを登録（存在しない場合のみ）
     this.schedulerManager.ensureDefaultTask(
       "news",
@@ -334,6 +368,15 @@ export class GatewayServer {
         "ログ分析",
         "毎朝5時に日次ログ分析レポートを生成",
         "0 5 * * *",
+      );
+    }
+
+    if (this.newsReportScheduler) {
+      this.schedulerManager.ensureDefaultTask(
+        "news-report",
+        "ニュースレポート",
+        "毎朝6時にニュース/投稿の評価Top3レポートを生成",
+        "0 6 * * *",
       );
     }
 
@@ -370,6 +413,44 @@ export class GatewayServer {
         console.error("Failed to send report to Discord:", result.error);
       }
     }
+
+    // 4. LogStoreに記録
+    this.saveOutcomeLog(report.id, "analytics-scheduler", "report", "final", {
+      report: {
+        title: report.title,
+        summary: report.summary,
+      },
+    });
+  }
+
+  private async handleNewsReportGenerated(
+    report: NewsReport,
+    article: NewsArticle,
+  ): Promise<void> {
+    // 1. NewsStoreに保存
+    this.newsStore.save([article]);
+
+    // 2. WebSocketブロードキャスト
+    const articles = this.newsStore.list();
+    this.broadcast("news.updated", { articles });
+
+    // 3. Discord通知
+    const channelId = process.env.DISCORD_REPORT_CHANNEL_ID;
+    if (channelId && this.discordBot?.isReady()) {
+      const embed = createNewsReportEmbed(report);
+      const result = await this.discordBot.sendEmbed(channelId, embed);
+      if (!result.success) {
+        console.error("Failed to send news report to Discord:", result.error);
+      }
+    }
+
+    // 4. LogStoreに記録
+    this.saveOutcomeLog(report.id, "news-report-scheduler", "report", "final", {
+      report: {
+        title: report.title,
+        summary: report.summary,
+      },
+    });
   }
 
   private initConnectors(): void {

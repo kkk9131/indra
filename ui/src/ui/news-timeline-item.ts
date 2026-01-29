@@ -78,9 +78,14 @@ export class NewsTimelineItemElement extends LitElement {
       color: #2e7d32;
     }
 
-    .badge.log-analysis {
+    .badge.indra-log {
       background: rgba(52, 152, 219, 0.1);
       color: #2980b9;
+    }
+
+    .badge.news-report {
+      background: rgba(155, 89, 182, 0.1);
+      color: #8e44ad;
     }
 
     .badge.github-changelog {
@@ -256,8 +261,10 @@ export class NewsTimelineItemElement extends LitElement {
     switch (this.article.source) {
       case "claude-code":
         return "claude-code";
-      case "log-analysis":
-        return "log-analysis";
+      case "indra-log":
+        return "indra-log";
+      case "news-report":
+        return "news-report";
       case "github-changelog":
         return "github-changelog";
       default:
@@ -269,8 +276,10 @@ export class NewsTimelineItemElement extends LitElement {
     switch (this.article.source) {
       case "claude-code":
         return "Claude Code";
-      case "log-analysis":
-        return "Report";
+      case "indra-log":
+        return "Indra Log";
+      case "news-report":
+        return "News Report";
       case "github-changelog":
         return "Changelog";
       default:

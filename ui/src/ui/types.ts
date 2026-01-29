@@ -84,7 +84,8 @@ export type { NewsArticle } from "../services/ws-client.js";
 export type NewsSource =
   | "claude-code"
   | "blog"
-  | "log-analysis"
+  | "indra-log"
+  | "news-report"
   | "x-account"
   | "github-changelog";
 
