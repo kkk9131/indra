@@ -1,10 +1,10 @@
 import type { WebSocket } from "ws";
 
 import type { RequestFrame } from "../protocol/index.js";
-import type { AnalyticsScheduler } from "../../analytics/index.js";
+import type { AnalyticsService } from "../services/analytics.js";
 
 export interface AnalyticsHandlerContext {
-  analyticsScheduler: AnalyticsScheduler | null;
+  analytics: AnalyticsService;
   sendSuccess: (ws: WebSocket, id: string, payload?: unknown) => void;
   sendError: (ws: WebSocket, id: string, code: string, message: string) => void;
   getErrorMessage: (error: unknown) => string;
@@ -15,23 +15,14 @@ export function handleAnalyticsRunNow(
   ws: WebSocket,
   frame: RequestFrame,
 ): void {
-  if (!ctx.analyticsScheduler) {
-    ctx.sendError(
-      ws,
-      frame.id,
-      "ANALYTICS_NOT_CONFIGURED",
-      "Analytics not configured. Set ZAI_API_KEY environment variable.",
-    );
-    return;
-  }
-
   try {
-    ctx.sendSuccess(ws, frame.id, { status: "started" });
+    const result = ctx.analytics.runNow();
+    if (!result.ok) {
+      ctx.sendError(ws, frame.id, result.code, result.message);
+      return;
+    }
 
-    // バックグラウンドで実行
-    ctx.analyticsScheduler.run().catch((error) => {
-      console.error("[Gateway] Analytics run failed:", error);
-    });
+    ctx.sendSuccess(ws, frame.id, { status: "started" });
   } catch (error) {
     ctx.sendError(ws, frame.id, "ANALYTICS_ERROR", ctx.getErrorMessage(error));
   }

@@ -1,11 +1,10 @@
 import type { WebSocket } from "ws";
 
 import type { RequestFrame } from "../protocol/index.js";
-import type { NewsScheduler, NewsStore } from "../../news/index.js";
+import type { NewsService } from "../services/news.js";
 
 export interface NewsHandlerContext {
-  newsStore: NewsStore;
-  newsScheduler: NewsScheduler;
+  news: NewsService;
   sendSuccess: (ws: WebSocket, id: string, payload?: unknown) => void;
 }
 
@@ -14,7 +13,7 @@ export function handleNewsList(
   ws: WebSocket,
   frame: RequestFrame,
 ): void {
-  const articles = ctx.newsStore.list();
+  const articles = ctx.news.listArticles();
   ctx.sendSuccess(ws, frame.id, { articles });
 }
 
@@ -30,7 +29,7 @@ export function handleNewsRefresh(
 
   // バックグラウンドで実行（awaitしない）
   console.log("[Gateway] Starting newsScheduler.run()");
-  ctx.newsScheduler.run().catch((error) => {
+  ctx.news.refresh().catch((error) => {
     console.error("[Gateway] News refresh failed:", error);
   });
 }

@@ -4,15 +4,7 @@ import { WebSocketServer } from "ws";
 import { createServer, type Server } from "http";
 import { SessionManager } from "../infra/index.js";
 import { ConfigManager, type Config } from "../config/index.js";
-import {
-  AgentSDKProvider,
-  type AgentChatOptions,
-  type AgentOptions,
-  type ContentBlock,
-  type LLMProvider,
-  type Message,
-  type MultimodalMessage,
-} from "../llm/index.js";
+import { AgentSDKProvider, type LLMProvider } from "../llm/index.js";
 import {
   FrameSchema,
   createResponse,
@@ -24,13 +16,14 @@ import {
   type GatewayContext,
   type RequestHandler,
 } from "./handlers/index.js";
+import {
+  createGatewayServices,
+  type AgentLogParams,
+  type GatewayServices,
+} from "./services/index.js";
 import { ApprovalQueue } from "../approval/index.js";
 import { XConnector, type Platform } from "../connectors/index.js";
-import {
-  NewsStore,
-  NewsScheduler,
-  NewsSourceStore,
-} from "../news/index.js";
+import { NewsStore, NewsScheduler, NewsSourceStore } from "../news/index.js";
 import {
   XOAuth2Handler,
   getCredentialStore,
@@ -52,17 +45,7 @@ import {
   TaskExecutor,
   type TaskExecutionResult,
 } from "../scheduler/index.js";
-import {
-  XPostWorkflowService,
-} from "../xpost/index.js";
-
-interface AgentLogParams {
-  tool?: string;
-  toolInput?: unknown;
-  toolResult?: string;
-  turnNumber?: number;
-  text?: string;
-}
+import { XPostWorkflowService } from "../xpost/index.js";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -156,10 +139,10 @@ export class GatewayServer {
   private taskRegistry: TaskRegistry;
   private taskExecutor: TaskExecutor;
   private xpostWorkflowService: XPostWorkflowService;
+  private services: GatewayServices;
   private requestHandlers: Map<string, RequestHandler>;
   private port: number;
   private clients: Set<WebSocket> = new Set();
-  private abortControllers = new Map<string, AbortController>();
 
   constructor(port = 3001) {
     this.port = port;
@@ -207,6 +190,25 @@ export class GatewayServer {
     this.initDiscordBot();
     this.initAnalytics();
     this.initScheduledTasks();
+    this.services = createGatewayServices({
+      configManager: this.configManager,
+      approvalQueue: this.approvalQueue,
+      credentialStore: this.credentialStore,
+      xConnector: this.xConnector,
+      xOAuth2Handler: this.xOAuth2Handler,
+      discordBot: this.discordBot,
+      isDiscordBotReady: () => this.isDiscordBotReady(),
+      newsStore: this.newsStore,
+      newsScheduler: this.newsScheduler,
+      newsSourceStore: this.newsSourceStore,
+      logStore: this.logStore,
+      analyticsScheduler: this.analyticsScheduler,
+      schedulerManager: this.schedulerManager,
+      xpostWorkflowService: this.xpostWorkflowService,
+      createLLMProvider: (config) => this.createLLMProvider(config),
+      saveAgentLog: (action, params) => this.saveAgentLog(action, params),
+      broadcast: (event, payload) => this.broadcast(event, payload),
+    });
     this.requestHandlers = createHandlerRegistry(this.buildHandlerContext());
   }
 
@@ -463,30 +465,11 @@ export class GatewayServer {
 
   private buildHandlerContext(): GatewayContext {
     return {
-      configManager: this.configManager,
-      approvalQueue: this.approvalQueue,
-      credentialStore: this.credentialStore,
-      xConnector: this.xConnector,
-      xOAuth2Handler: this.xOAuth2Handler,
-      discordBot: this.discordBot,
-      isDiscordBotReady: () => this.isDiscordBotReady(),
-      newsStore: this.newsStore,
-      newsScheduler: this.newsScheduler,
-      newsSourceStore: this.newsSourceStore,
-      logStore: this.logStore,
-      analyticsScheduler: this.analyticsScheduler,
-      schedulerManager: this.schedulerManager,
-      xpostWorkflowService: this.xpostWorkflowService,
-      createLLMProvider: (config) => this.createLLMProvider(config),
+      services: this.services,
       broadcast: (event, payload) => this.broadcast(event, payload),
       sendSuccess,
       sendError,
       getErrorMessage,
-      handlers: {
-        handleChatSend: this.handleChatSend.bind(this),
-        handleChatCancel: this.handleChatCancel.bind(this),
-        handleLLMTest: this.handleLLMTest.bind(this),
-      },
     };
   }
 
@@ -531,369 +514,23 @@ export class GatewayServer {
     });
   }
 
-  private async handleChatSend(
-    ws: WebSocket,
-    frame: RequestFrame,
-  ): Promise<void> {
-    const requestId = frame.id;
-
-    try {
-      const params = frame.params as {
-        message: string;
-        history?: Message[];
-        agentMode?: boolean;
-        agentOptions?: AgentOptions;
-        images?: Array<{
-          data: string;
-          mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
-        }>;
-      };
-      const config = this.configManager.get();
-      const provider = this.createLLMProvider(config.llm);
-
-      // Create AbortController for this request
-      const abortController = new AbortController();
-      this.abortControllers.set(requestId, abortController);
-
-      // Build messages with optional images
-      const hasImages = params.images && params.images.length > 0;
-
-      if (hasImages) {
-        // Build multimodal message
-        const contentBlocks: ContentBlock[] = [];
-
-        // Add images first
-        for (const img of params.images!) {
-          contentBlocks.push({
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: img.mediaType,
-              data: img.data,
-            },
-          });
-        }
-
-        // Add text
-        contentBlocks.push({
-          type: "text",
-          text: params.message,
-        });
-
-        const multimodalMessages: MultimodalMessage[] = [
-          ...(params.history?.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })) ?? []),
-          { role: "user" as const, content: contentBlocks },
-        ];
-
-        // Use agent mode if requested
-        if (params.agentMode && provider.chatStreamWithAgent) {
-          await this.handleAgentChat(
-            ws,
-            requestId,
-            provider,
-            multimodalMessages,
-            config,
-            params.agentOptions,
-            abortController.signal,
-          );
-        } else {
-          // For non-agent mode with images, fall back to text-only for now
-          const messages: Message[] = [
-            ...(params.history ?? []),
-            { role: "user", content: params.message },
-          ];
-          await this.handleSimpleChat(ws, provider, messages, config);
-        }
-      } else {
-        const messages: Message[] = [
-          ...(params.history ?? []),
-          { role: "user", content: params.message },
-        ];
-
-        // Use agent mode if requested
-        if (params.agentMode && provider.chatStreamWithAgent) {
-          await this.handleAgentChat(
-            ws,
-            requestId,
-            provider,
-            messages,
-            config,
-            params.agentOptions,
-            abortController.signal,
-          );
-        } else {
-          await this.handleSimpleChat(ws, provider, messages, config);
-        }
-      }
-
-      ws.send(JSON.stringify(createEvent("chat.done", {})));
-      sendSuccess(ws, frame.id, { requestId });
-    } catch (error) {
-      if ((error as Error).name === "AbortError") {
-        ws.send(
-          JSON.stringify(
-            createEvent("chat.cancelled", {
-              requestId,
-              reason: "User cancelled",
-            }),
-          ),
-        );
-        sendSuccess(ws, frame.id, { cancelled: true, requestId });
-      } else {
-        console.error("LLM Error:", error);
-        sendError(ws, frame.id, "LLM_ERROR", getErrorMessage(error));
-      }
-    } finally {
-      this.abortControllers.delete(requestId);
-    }
-  }
-
-  private handleChatCancel(ws: WebSocket, frame: RequestFrame): void {
-    const { requestId } = frame.params as { requestId: string };
-    const controller = this.abortControllers.get(requestId);
-
-    if (controller) {
-      controller.abort("User cancelled");
-      this.abortControllers.delete(requestId);
-      sendSuccess(ws, frame.id, { cancelled: true });
-    } else {
-      sendError(ws, frame.id, "NOT_FOUND", "Request not found");
-    }
-  }
-
-  private async handleSimpleChat(
-    ws: WebSocket,
-    provider: LLMProvider,
-    messages: Message[],
-    config: Config,
-  ): Promise<void> {
-    const options = { systemPrompt: config.llm.systemPrompt };
-
-    for await (const chunk of provider.chatStream(messages, options)) {
-      ws.send(JSON.stringify(createEvent("chat.chunk", { text: chunk })));
-    }
-  }
-
-  private static readonly DEFAULT_AGENT_TOOLS = [
-    "Read",
-    "Glob",
-    "Grep",
-    "Bash",
-    "WebSearch",
-    "Skill",
-  ];
-
-  private async handleAgentChat(
-    ws: WebSocket,
-    requestId: string,
-    provider: LLMProvider,
-    messages: Message[] | MultimodalMessage[],
-    config: Config,
-    agentOptions?: AgentOptions,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    if (!provider.chatStreamWithAgent) {
-      throw new Error("Agent mode not supported by this provider");
-    }
-
-    const options: AgentChatOptions = {
-      systemPrompt: config.llm.systemPrompt,
-      agent: {
-        maxTurns: agentOptions?.maxTurns ?? 10,
-        tools: agentOptions?.tools ?? GatewayServer.DEFAULT_AGENT_TOOLS,
-        permissionMode: agentOptions?.permissionMode ?? "acceptEdits",
-      },
-      signal,
-    };
-
-    for await (const event of provider.chatStreamWithAgent(messages, options)) {
-      switch (event.type) {
-        case "text":
-          ws.send(
-            JSON.stringify(createEvent("chat.chunk", { text: event.text })),
-          );
-          this.saveAgentLog("text", { text: event.text });
-          break;
-        case "tool_start":
-          ws.send(
-            JSON.stringify(
-              createEvent("agent.tool_start", {
-                tool: event.tool,
-                input: event.input,
-                toolUseId: event.toolUseId,
-              }),
-            ),
-          );
-          this.saveAgentLog("tool_start", {
-            tool: event.tool,
-            toolInput: event.input,
-          });
-          break;
-        case "tool_result":
-          ws.send(
-            JSON.stringify(
-              createEvent("agent.tool_result", {
-                tool: event.tool,
-                result: event.result,
-                toolUseId: event.toolUseId,
-              }),
-            ),
-          );
-          this.saveAgentLog("tool_result", {
-            tool: event.tool,
-            toolResult: event.result,
-          });
-          break;
-        case "turn_complete":
-          ws.send(
-            JSON.stringify(
-              createEvent("agent.turn_complete", {
-                turnNumber: event.turnNumber,
-              }),
-            ),
-          );
-          this.saveAgentLog("turn_complete", { turnNumber: event.turnNumber });
-          break;
-        case "cancelled":
-          ws.send(
-            JSON.stringify(
-              createEvent("chat.cancelled", {
-                requestId,
-                reason: event.reason,
-              }),
-            ),
-          );
-          return;
-        case "done":
-          break;
-      }
-    }
-  }
-
-  private async handleLLMTest(
-    ws: WebSocket,
-    frame: RequestFrame,
-  ): Promise<void> {
-    try {
-      const config = this.configManager.get();
-      const provider = this.createLLMProvider(config.llm);
-
-      const testMessages: Message[] = [
-        {
-          role: "user",
-          content: "Hello, please respond with 'OK' if you can hear me.",
-        },
-      ];
-
-      const response = await provider.chat(testMessages);
-      sendSuccess(ws, frame.id, { success: true, response });
-    } catch (error) {
-      sendError(ws, frame.id, "LLM_TEST_FAILED", getErrorMessage(error));
-    }
-  }
   // ===== Discord Integration Methods =====
 
   async chatForDiscord(prompt: string): Promise<string> {
-    const config = this.configManager.get();
-    const provider = this.createLLMProvider(config.llm);
-
-    const messages: Message[] = [{ role: "user", content: prompt }];
-    const response = await provider.chat(messages, {
-      systemPrompt: config.llm.systemPrompt,
-    });
-
-    return response;
+    return this.services.discordIntegration.chat(prompt);
   }
 
   async createPostForDiscord(
     platform: Platform,
     prompt: string,
   ): Promise<ApprovalItem> {
-    const config = this.configManager.get();
-    const provider = this.createLLMProvider(config.llm);
-
-    const systemPrompt = `You are a social media content creator. Generate a concise, engaging post for ${platform}.
-Keep it under 280 characters. Be creative and natural. Output ONLY the post text, no explanations.`;
-
-    const generatedText = await provider.chat(
-      [{ role: "user", content: prompt }],
-      { systemPrompt },
-    );
-
-    const item = this.approvalQueue.create({
-      platform,
-      content: { text: generatedText.slice(0, 280) },
-      prompt,
-    });
-
-    // Broadcast to all WebSocket clients
-    this.broadcast("post.created", { item });
-
-    return item;
+    return this.services.discordIntegration.createPost(platform, prompt);
   }
 
   async approvePostForDiscord(
     id: string,
   ): Promise<{ success: boolean; item?: ApprovalItem | null; error?: string }> {
-    const item = this.approvalQueue.approve(id);
-    if (!item) {
-      return { success: false, error: `Item not found: ${id}` };
-    }
-
-    if (item.platform !== "x") {
-      return {
-        success: false,
-        error: `Platform not yet supported: ${item.platform}`,
-      };
-    }
-
-    const xCreds = this.credentialStore.getXCredentials();
-    let connector: XConnector;
-
-    if (xCreds && !this.credentialStore.isXTokenExpired()) {
-      connector = new XConnector({ oauth2AccessToken: xCreds.accessToken });
-    } else if (this.xConnector) {
-      connector = this.xConnector;
-    } else {
-      const failedItem = this.approvalQueue.markFailed(
-        id,
-        "X connector not configured",
-      );
-      this.broadcast("post.updated", { item: failedItem });
-      return { success: false, error: "X connector not configured" };
-    }
-
-    try {
-      await connector.connect();
-      const result = await connector.post(item.content);
-
-      if (result.success && result.postId && result.url) {
-        const postedItem = this.approvalQueue.markPosted(
-          id,
-          result.postId,
-          result.url,
-        );
-        this.broadcast("post.updated", { item: postedItem });
-        return { success: true, item: postedItem };
-      } else {
-        const failedItem = this.approvalQueue.markFailed(
-          id,
-          result.error ?? "Unknown error",
-        );
-        this.broadcast("post.updated", { item: failedItem });
-        return { success: false, error: result.error ?? "Failed to post" };
-      }
-    } catch (error) {
-      const failedItem = this.approvalQueue.markFailed(
-        id,
-        getErrorMessage(error),
-      );
-      this.broadcast("post.updated", { item: failedItem });
-      return { success: false, error: getErrorMessage(error) };
-    }
+    return this.services.discordIntegration.approvePost(id);
   }
 
   getStatusForDiscord(): {
@@ -902,19 +539,7 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
     discordBot: string;
     pendingPosts: number;
   } {
-    const xCreds = this.credentialStore.getXCredentials();
-    const xAuth = xCreds
-      ? this.credentialStore.isXTokenExpired()
-        ? "Expired"
-        : `Connected (@${xCreds.username ?? "unknown"})`
-      : "Not connected";
-
-    return {
-      gateway: "Running",
-      xAuth,
-      discordBot: this.isDiscordBotReady() ? "Connected" : "Not connected",
-      pendingPosts: this.approvalQueue.list("pending").length,
-    };
+    return this.services.discordIntegration.getStatus();
   }
 
   stop(): void {

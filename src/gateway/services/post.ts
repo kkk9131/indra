@@ -1,0 +1,136 @@
+import type { Config, ConfigManager } from "../../config/index.js";
+import {
+  XConnector,
+  type Content,
+  type Platform,
+} from "../../connectors/index.js";
+import type { CredentialStore } from "../../auth/index.js";
+import type { ApprovalItem } from "../../approval/types.js";
+import type { ApprovalQueue, ApprovalStatus } from "../../approval/index.js";
+import type { LLMProvider } from "../../llm/index.js";
+
+export type PostApproveResult =
+  | { ok: true; item: ApprovalItem }
+  | { ok: false; code: string; message: string; item?: ApprovalItem | null };
+
+export interface PostService {
+  createDraft: (platform: Platform, prompt: string) => Promise<ApprovalItem>;
+  list: (status?: ApprovalStatus) => ApprovalItem[];
+  approve: (id: string) => Promise<PostApproveResult>;
+  reject: (id: string) => ApprovalItem | null;
+  edit: (id: string, content: Content) => ApprovalItem | null;
+}
+
+interface PostServiceDeps {
+  configManager: ConfigManager;
+  approvalQueue: ApprovalQueue;
+  credentialStore: CredentialStore;
+  xConnector: XConnector | null;
+  createLLMProvider: (config: Config["llm"]) => LLMProvider;
+}
+
+export function createPostService(deps: PostServiceDeps): PostService {
+  return {
+    async createDraft(platform, prompt) {
+      const provider = deps.createLLMProvider(deps.configManager.get().llm);
+      const systemPrompt = `You are a social media content creator. Generate a concise, engaging post for ${platform}.
+Keep it under 280 characters. Be creative and natural. Output ONLY the post text, no explanations.`;
+
+      const generatedText = await provider.chat(
+        [{ role: "user", content: prompt }],
+        { systemPrompt },
+      );
+
+      return deps.approvalQueue.create({
+        platform,
+        content: { text: generatedText.slice(0, 280) },
+        prompt,
+      });
+    },
+    list(status) {
+      return deps.approvalQueue.list(status);
+    },
+    async approve(id) {
+      const item = deps.approvalQueue.approve(id);
+      if (!item) {
+        return {
+          ok: false,
+          code: "NOT_FOUND",
+          message: `Item not found: ${id}`,
+        };
+      }
+
+      if (item.platform !== "x") {
+        return {
+          ok: false,
+          code: "UNSUPPORTED_PLATFORM",
+          message: `Platform not yet supported: ${item.platform}`,
+        };
+      }
+
+      const xCreds = deps.credentialStore.getXCredentials();
+      let connector: XConnector;
+
+      if (xCreds && !deps.credentialStore.isXTokenExpired()) {
+        connector = new XConnector({ oauth2AccessToken: xCreds.accessToken });
+      } else if (deps.xConnector) {
+        connector = deps.xConnector;
+      } else {
+        const failedItem = deps.approvalQueue.markFailed(
+          id,
+          "X connector not configured",
+        );
+        return {
+          ok: false,
+          code: "CONNECTOR_NOT_CONFIGURED",
+          message:
+            "X connector not configured. Authenticate via OAuth 2.0 or set OAuth 1.0a environment variables.",
+          item: failedItem,
+        };
+      }
+
+      try {
+        await connector.connect();
+        const result = await connector.post(item.content);
+
+        if (result.success && result.postId && result.url) {
+          const postedItem = deps.approvalQueue.markPosted(
+            id,
+            result.postId,
+            result.url,
+          );
+          if (!postedItem) {
+            return {
+              ok: false,
+              code: "MARK_POSTED_FAILED",
+              message: "Failed to mark item as posted",
+            };
+          }
+          return { ok: true, item: postedItem };
+        }
+
+        const failedItem = deps.approvalQueue.markFailed(
+          id,
+          result.error ?? "Unknown error",
+        );
+        return {
+          ok: false,
+          code: "POST_FAILED",
+          message: result.error ?? "Failed to post",
+          item: failedItem,
+        };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        const failedItem = deps.approvalQueue.markFailed(id, message);
+        return { ok: false, code: "POST_ERROR", message, item: failedItem };
+      }
+    },
+    reject(id) {
+      return deps.approvalQueue.reject(id);
+    },
+    edit(id, content) {
+      return deps.approvalQueue.update(id, { content });
+    },
+  };
+}

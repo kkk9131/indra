@@ -2,13 +2,13 @@ import type { WebSocket } from "ws";
 
 import type { RequestFrame } from "../protocol/index.js";
 import type {
-  SchedulerManager,
   CreateTaskParams,
   UpdateTaskParams,
 } from "../../scheduler/index.js";
+import type { ScheduleService } from "../services/schedule.js";
 
 export interface ScheduleHandlerContext {
-  schedulerManager: SchedulerManager;
+  schedule: ScheduleService;
   sendSuccess: (ws: WebSocket, id: string, payload?: unknown) => void;
   sendError: (ws: WebSocket, id: string, code: string, message: string) => void;
   getErrorMessage: (error: unknown) => string;
@@ -19,7 +19,7 @@ export function handleScheduleList(
   ws: WebSocket,
   frame: RequestFrame,
 ): void {
-  const tasks = ctx.schedulerManager.list();
+  const tasks = ctx.schedule.list();
   ctx.sendSuccess(ws, frame.id, { tasks });
 }
 
@@ -29,7 +29,7 @@ export function handleScheduleGet(
   frame: RequestFrame,
 ): void {
   const { id } = frame.params as { id: string };
-  const task = ctx.schedulerManager.get(id);
+  const task = ctx.schedule.get(id);
   if (!task) {
     ctx.sendError(ws, frame.id, "NOT_FOUND", `Task not found: ${id}`);
     return;
@@ -44,7 +44,7 @@ export function handleScheduleCreate(
 ): void {
   try {
     const params = frame.params as CreateTaskParams;
-    const task = ctx.schedulerManager.create(params);
+    const task = ctx.schedule.create(params);
     ctx.sendSuccess(ws, frame.id, { task });
   } catch (error) {
     ctx.sendError(ws, frame.id, "CREATE_ERROR", ctx.getErrorMessage(error));
@@ -60,7 +60,7 @@ export function handleScheduleUpdate(
     const { id, ...params } = frame.params as {
       id: string;
     } & UpdateTaskParams;
-    const task = ctx.schedulerManager.update(id, params);
+    const task = ctx.schedule.update(id, params);
     if (!task) {
       ctx.sendError(ws, frame.id, "NOT_FOUND", `Task not found: ${id}`);
       return;
@@ -77,7 +77,7 @@ export function handleScheduleDelete(
   frame: RequestFrame,
 ): void {
   const { id } = frame.params as { id: string };
-  const deleted = ctx.schedulerManager.delete(id);
+  const deleted = ctx.schedule.remove(id);
   if (!deleted) {
     ctx.sendError(ws, frame.id, "NOT_FOUND", `Task not found: ${id}`);
     return;
@@ -91,7 +91,7 @@ export function handleScheduleToggle(
   frame: RequestFrame,
 ): void {
   const { id, enabled } = frame.params as { id: string; enabled: boolean };
-  const task = ctx.schedulerManager.toggle(id, enabled);
+  const task = ctx.schedule.toggle(id, enabled);
   if (!task) {
     ctx.sendError(ws, frame.id, "NOT_FOUND", `Task not found: ${id}`);
     return;
@@ -110,7 +110,7 @@ export function handleScheduleRunNow(
   ctx.sendSuccess(ws, frame.id, { status: "started" });
 
   // バックグラウンドで実行
-  ctx.schedulerManager.runNow(id).catch((error) => {
+  ctx.schedule.runNow(id).catch((error) => {
     console.error(`[Gateway] Schedule runNow failed for ${id}:`, error);
   });
 }
@@ -120,7 +120,7 @@ export function handleScheduleTaskTypes(
   ws: WebSocket,
   frame: RequestFrame,
 ): void {
-  const taskTypes = ctx.schedulerManager.taskTypes().map((def) => ({
+  const taskTypes = ctx.schedule.taskTypes().map((def) => ({
     type: def.type,
     name: def.name,
     description: def.description,

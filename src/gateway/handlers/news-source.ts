@@ -1,20 +1,14 @@
 import type { WebSocket } from "ws";
 
 import type { RequestFrame } from "../protocol/index.js";
-import {
-  fetchXAccount,
-  tweetToArticle,
-  type CreateNewsSourceParams,
-  type NewsSourceDefinition,
-  type NewsSourceStore,
-  type NewsStore,
-  type UpdateNewsSourceParams,
-  type XAccountConfig,
+import type {
+  CreateNewsSourceParams,
+  UpdateNewsSourceParams,
 } from "../../news/index.js";
+import type { NewsSourceService } from "../services/news-source.js";
 
 export interface NewsSourceHandlerContext {
-  newsSourceStore: NewsSourceStore;
-  newsStore: NewsStore;
+  newsSource: NewsSourceService;
   broadcast: (event: string, payload: unknown) => void;
   sendSuccess: (ws: WebSocket, id: string, payload?: unknown) => void;
   sendError: (ws: WebSocket, id: string, code: string, message: string) => void;
@@ -26,7 +20,7 @@ export function handleNewsSourceList(
   ws: WebSocket,
   frame: RequestFrame,
 ): void {
-  const sources = ctx.newsSourceStore.list();
+  const sources = ctx.newsSource.list();
   ctx.sendSuccess(ws, frame.id, { sources });
 }
 
@@ -36,7 +30,7 @@ export function handleNewsSourceGet(
   frame: RequestFrame,
 ): void {
   const { id } = frame.params as { id: string };
-  const source = ctx.newsSourceStore.get(id);
+  const source = ctx.newsSource.get(id);
   if (!source) {
     ctx.sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
     return;
@@ -51,7 +45,7 @@ export function handleNewsSourceCreate(
 ): void {
   try {
     const params = frame.params as CreateNewsSourceParams;
-    const source = ctx.newsSourceStore.create(params);
+    const source = ctx.newsSource.create(params);
     ctx.sendSuccess(ws, frame.id, { source });
     ctx.broadcast("newsSource.updated", { source });
   } catch (error) {
@@ -68,7 +62,7 @@ export function handleNewsSourceUpdate(
     const { id, ...params } = frame.params as {
       id: string;
     } & UpdateNewsSourceParams;
-    const source = ctx.newsSourceStore.update(id, params);
+    const source = ctx.newsSource.update(id, params);
     if (!source) {
       ctx.sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
       return;
@@ -86,7 +80,7 @@ export function handleNewsSourceDelete(
   frame: RequestFrame,
 ): void {
   const { id } = frame.params as { id: string };
-  const deleted = ctx.newsSourceStore.delete(id);
+  const deleted = ctx.newsSource.remove(id);
   if (!deleted) {
     ctx.sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
     return;
@@ -101,7 +95,7 @@ export function handleNewsSourceToggle(
   frame: RequestFrame,
 ): void {
   const { id, enabled } = frame.params as { id: string; enabled: boolean };
-  const source = ctx.newsSourceStore.toggle(id, enabled);
+  const source = ctx.newsSource.toggle(id, enabled);
   if (!source) {
     ctx.sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
     return;
@@ -116,7 +110,7 @@ export function handleNewsSourceFetchNow(
   frame: RequestFrame,
 ): void {
   const { id } = frame.params as { id: string };
-  const source = ctx.newsSourceStore.get(id);
+  const source = ctx.newsSource.get(id);
 
   if (!source) {
     ctx.sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
@@ -134,29 +128,21 @@ export function handleNewsSourceFetchNow(
 
 async function executeNewsSourceFetch(
   ctx: NewsSourceHandlerContext,
-  source: NewsSourceDefinition,
+  source: Parameters<NewsSourceService["fetchNow"]>[0],
 ): Promise<void> {
   console.log(`[Gateway] NewsSource fetch started for ${source.name}`);
 
   try {
-    if (source.sourceType === "x-account") {
-      const config = source.sourceConfig as XAccountConfig;
-      const result = await fetchXAccount(config);
-      const articles = result.tweets.map((tweet) => tweetToArticle(tweet));
-
-      if (articles.length > 0) {
-        await ctx.newsStore.save(articles);
-        ctx.broadcast("news.updated", { articles: ctx.newsStore.list() });
-      }
-
+    const result = await ctx.newsSource.fetchNow(source);
+    if (result.allArticles.length > 0) {
+      ctx.broadcast("news.updated", { articles: result.allArticles });
       console.log(
-        `[Gateway] Fetched ${articles.length} articles from ${source.name}`,
+        `[Gateway] Fetched ${result.articles.length} articles from ${source.name}`,
       );
     }
 
-    const updatedSource = ctx.newsSourceStore.updateLastFetchedAt(source.id);
-    if (updatedSource) {
-      ctx.broadcast("newsSource.updated", { source: updatedSource });
+    if (result.updatedSource) {
+      ctx.broadcast("newsSource.updated", { source: result.updatedSource });
     }
   } catch (error) {
     console.error(`[Gateway] NewsSource fetch error:`, error);

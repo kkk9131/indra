@@ -1,6 +1,7 @@
 import type { Config } from "../../config/index.js";
 
 import { handleNewsList, handleNewsRefresh } from "./news.js";
+import { handleChatCancel, handleChatSend, handleLLMTest } from "./chat.js";
 import {
   handleScheduleList,
   handleScheduleGet,
@@ -45,58 +46,46 @@ export function createHandlerRegistry(
   ctx: GatewayContext,
 ): Map<string, RequestHandler> {
   const newsCtx = {
-    newsStore: ctx.newsStore,
-    newsScheduler: ctx.newsScheduler,
+    news: ctx.services.news,
     sendSuccess: ctx.sendSuccess,
   };
 
   const scheduleCtx = {
-    schedulerManager: ctx.schedulerManager,
+    schedule: ctx.services.schedule,
     sendSuccess: ctx.sendSuccess,
     sendError: ctx.sendError,
     getErrorMessage: ctx.getErrorMessage,
   };
 
   const postCtx = {
-    configManager: ctx.configManager,
-    approvalQueue: ctx.approvalQueue,
-    credentialStore: ctx.credentialStore,
-    xConnector: ctx.xConnector,
-    createLLMProvider: ctx.createLLMProvider,
+    post: ctx.services.post,
     broadcast: ctx.broadcast,
     sendSuccess: ctx.sendSuccess,
     sendError: ctx.sendError,
-    getErrorMessage: ctx.getErrorMessage,
   };
 
   const authCtx = {
-    credentialStore: ctx.credentialStore,
-    xOAuth2Handler: ctx.xOAuth2Handler,
-    xConnector: ctx.xConnector,
-    discordBot: ctx.discordBot,
-    isDiscordBotReady: ctx.isDiscordBotReady,
+    auth: ctx.services.auth,
     sendSuccess: ctx.sendSuccess,
     sendError: ctx.sendError,
-    getErrorMessage: ctx.getErrorMessage,
   };
 
   const logsCtx = {
-    logStore: ctx.logStore,
+    logs: ctx.services.logs,
     sendSuccess: ctx.sendSuccess,
     sendError: ctx.sendError,
     getErrorMessage: ctx.getErrorMessage,
   };
 
   const analyticsCtx = {
-    analyticsScheduler: ctx.analyticsScheduler,
+    analytics: ctx.services.analytics,
     sendSuccess: ctx.sendSuccess,
     sendError: ctx.sendError,
     getErrorMessage: ctx.getErrorMessage,
   };
 
   const newsSourceCtx = {
-    newsSourceStore: ctx.newsSourceStore,
-    newsStore: ctx.newsStore,
+    newsSource: ctx.services.newsSource,
     broadcast: ctx.broadcast,
     sendSuccess: ctx.sendSuccess,
     sendError: ctx.sendError,
@@ -104,11 +93,17 @@ export function createHandlerRegistry(
   };
 
   const xpostCtx = {
-    newsStore: ctx.newsStore,
-    xpostWorkflowService: ctx.xpostWorkflowService,
+    xpost: ctx.services.xpost,
     broadcast: ctx.broadcast,
     sendSuccess: ctx.sendSuccess,
     sendError: ctx.sendError,
+  };
+
+  const chatCtx = {
+    chat: ctx.services.chat,
+    sendSuccess: ctx.sendSuccess,
+    sendError: ctx.sendError,
+    getErrorMessage: ctx.getErrorMessage,
   };
 
   return new Map<string, RequestHandler>([
@@ -116,20 +111,20 @@ export function createHandlerRegistry(
       "ping",
       (ws, frame) => ctx.sendSuccess(ws, frame.id, { pong: Date.now() }),
     ],
-    ["chat.send", ctx.handlers.handleChatSend],
-    ["chat.cancel", ctx.handlers.handleChatCancel],
+    ["chat.send", (ws, frame) => handleChatSend(chatCtx, ws, frame)],
+    ["chat.cancel", (ws, frame) => handleChatCancel(chatCtx, ws, frame)],
     [
       "config.get",
       (ws, frame) =>
-        ctx.sendSuccess(ws, frame.id, { config: ctx.configManager.get() }),
+        ctx.sendSuccess(ws, frame.id, { config: ctx.services.config.get() }),
     ],
     [
       "config.set",
       (ws, frame) => {
         try {
           const configUpdate = frame.params as Partial<Config>;
-          ctx.configManager.set(configUpdate);
-          ctx.sendSuccess(ws, frame.id, { config: ctx.configManager.get() });
+          ctx.services.config.set(configUpdate);
+          ctx.sendSuccess(ws, frame.id, { config: ctx.services.config.get() });
         } catch (error) {
           ctx.sendError(
             ws,
@@ -140,7 +135,7 @@ export function createHandlerRegistry(
         }
       },
     ],
-    ["llm.test", ctx.handlers.handleLLMTest],
+    ["llm.test", (ws, frame) => handleLLMTest(chatCtx, ws, frame)],
     ["post.create", (ws, frame) => handlePostCreate(postCtx, ws, frame)],
     ["post.list", (ws, frame) => handlePostList(postCtx, ws, frame)],
     ["post.approve", (ws, frame) => handlePostApprove(postCtx, ws, frame)],
@@ -219,9 +214,6 @@ export function createHandlerRegistry(
       "newsSource.fetchNow",
       (ws, frame) => handleNewsSourceFetchNow(newsSourceCtx, ws, frame),
     ],
-    [
-      "xpost.generate",
-      (ws, frame) => handleXpostGenerate(xpostCtx, ws, frame),
-    ],
+    ["xpost.generate", (ws, frame) => handleXpostGenerate(xpostCtx, ws, frame)],
   ]);
 }
