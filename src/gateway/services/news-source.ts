@@ -1,12 +1,14 @@
 import {
   fetchXAccount,
   tweetToArticle,
+  fetchGitHubChangelog,
   type CreateNewsSourceParams,
   type NewsSourceDefinition,
   type NewsSourceStore,
   type NewsStore,
   type UpdateNewsSourceParams,
   type XAccountConfig,
+  type GitHubChangelogConfig,
 } from "../../news/index.js";
 import type { NewsArticle } from "../../news/types.js";
 
@@ -45,13 +47,23 @@ export function createNewsSourceService(
     remove: (id) => deps.newsSourceStore.delete(id),
     toggle: (id, enabled) => deps.newsSourceStore.toggle(id, enabled),
     async fetchNow(source) {
-      if (source.sourceType !== "x-account") {
-        return { articles: [], allArticles: [], updatedSource: null };
-      }
+      let articles: NewsArticle[] = [];
 
-      const config = source.sourceConfig as XAccountConfig;
-      const result = await fetchXAccount(config);
-      const articles = result.tweets.map((tweet) => tweetToArticle(tweet));
+      switch (source.sourceType) {
+        case "x-account": {
+          const config = source.sourceConfig as XAccountConfig;
+          const result = await fetchXAccount(config);
+          articles = result.tweets.map((tweet) => tweetToArticle(tweet));
+          break;
+        }
+        case "github": {
+          const config = source.sourceConfig as GitHubChangelogConfig;
+          articles = await fetchGitHubChangelog(config);
+          break;
+        }
+        default:
+          return { articles: [], allArticles: [], updatedSource: null };
+      }
 
       let allArticles: NewsArticle[] = [];
       if (articles.length > 0) {

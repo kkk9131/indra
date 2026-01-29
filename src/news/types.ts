@@ -27,7 +27,10 @@ export interface NewsSourceDefinition {
   id: string;
   name: string;
   sourceType: NewsSourceType;
-  sourceConfig: XAccountConfig | Record<string, unknown>;
+  sourceConfig:
+    | XAccountConfig
+    | GitHubChangelogConfig
+    | Record<string, unknown>;
   enabled: boolean;
   lastFetchedAt?: string;
   createdAt: string;
@@ -53,7 +56,11 @@ export const NewsSourceDefinitionSchema = z.object({
   id: z.string(),
   name: z.string(),
   sourceType: z.enum(["x-account", "rss", "web", "github"]),
-  sourceConfig: z.union([XAccountConfigSchema, z.record(z.unknown())]),
+  sourceConfig: z.union([
+    XAccountConfigSchema,
+    GitHubChangelogConfigSchema,
+    z.record(z.unknown()),
+  ]),
   enabled: z.boolean(),
   lastFetchedAt: z.string().optional(),
   createdAt: z.string(),

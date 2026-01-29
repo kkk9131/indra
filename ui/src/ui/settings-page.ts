@@ -20,7 +20,7 @@ const plusIcon = svg`<path d="M5 12h14"/><path d="M12 5v14"/>`;
 type TabId = "general" | "llm" | "cron" | "sources";
 type Language = "en" | "ja" | "zh";
 type Theme = "light" | "dark" | "auto";
-type NewsSourceType = "x-account" | "rss" | "web";
+type NewsSourceType = "x-account" | "rss" | "web" | "github";
 
 interface LLMConfig {
   model: string;
@@ -67,11 +67,21 @@ interface XAccountConfig {
   includeReplies?: boolean;
 }
 
+interface GitHubChangelogConfig {
+  owner: string;
+  repo: string;
+  branch?: string;
+  filePath?: string;
+}
+
 interface NewsSourceDefinition {
   id: string;
   name: string;
   sourceType: NewsSourceType;
-  sourceConfig: XAccountConfig | Record<string, unknown>;
+  sourceConfig:
+    | XAccountConfig
+    | GitHubChangelogConfig
+    | Record<string, unknown>;
   enabled: boolean;
   lastFetchedAt?: string;
   createdAt: string;
@@ -89,6 +99,7 @@ const SOURCE_TYPES: { value: NewsSourceType; label: string }[] = [
   { value: "x-account", label: "X Account" },
   { value: "rss", label: "RSS Feed" },
   { value: "web", label: "Web Page" },
+  { value: "github", label: "GitHub Changelog" },
 ];
 
 const MODELS = [
@@ -606,6 +617,11 @@ export class SettingsPageElement extends LitElement {
     hoursBack: 0, // 0 = 無制限
     includeRetweets: false,
     includeReplies: false,
+    // GitHub用プロパティ
+    owner: "",
+    repo: "",
+    branch: "main",
+    filePath: "CHANGELOG.md",
   };
 
   @state()
@@ -964,13 +980,26 @@ export class SettingsPageElement extends LitElement {
     };
   }
 
+  private buildGitHubConfig(): GitHubChangelogConfig {
+    return {
+      owner: this.sourceForm.owner,
+      repo: this.sourceForm.repo,
+      branch: this.sourceForm.branch || undefined,
+      filePath: this.sourceForm.filePath || undefined,
+    };
+  }
+
   private async createNewsSource(): Promise<void> {
     try {
       this.loading = true;
+      const sourceConfig =
+        this.sourceForm.sourceType === "github"
+          ? this.buildGitHubConfig()
+          : this.buildXAccountConfig();
       const result = (await this.sendRequest("newsSource.create", {
         name: this.sourceForm.name,
         sourceType: this.sourceForm.sourceType,
-        sourceConfig: this.buildXAccountConfig(),
+        sourceConfig,
         enabled: true,
       })) as { source: NewsSourceDefinition };
       this.newsSources = [...this.newsSources, result.source];
@@ -987,10 +1016,14 @@ export class SettingsPageElement extends LitElement {
     if (!this.editingSourceId) return;
     try {
       this.loading = true;
+      const sourceConfig =
+        this.sourceForm.sourceType === "github"
+          ? this.buildGitHubConfig()
+          : this.buildXAccountConfig();
       const result = (await this.sendRequest("newsSource.update", {
         id: this.editingSourceId,
         name: this.sourceForm.name,
-        sourceConfig: this.buildXAccountConfig(),
+        sourceConfig,
       })) as { source: NewsSourceDefinition };
       this.newsSources = this.newsSources.map((s) =>
         s.id === result.source.id ? result.source : s,
@@ -1044,16 +1077,37 @@ export class SettingsPageElement extends LitElement {
 
   private startEditSource(source: NewsSourceDefinition): void {
     this.editingSourceId = source.id;
-    const config = source.sourceConfig as XAccountConfig;
-    this.sourceForm = {
-      name: source.name,
-      sourceType: source.sourceType,
-      handle: config.handle ?? "",
-      maxTweets: config.maxTweets ?? 20,
-      hoursBack: config.hoursBack ?? 0,
-      includeRetweets: config.includeRetweets ?? false,
-      includeReplies: config.includeReplies ?? false,
-    };
+    if (source.sourceType === "github") {
+      const config = source.sourceConfig as GitHubChangelogConfig;
+      this.sourceForm = {
+        name: source.name,
+        sourceType: source.sourceType,
+        handle: "",
+        maxTweets: 20,
+        hoursBack: 0,
+        includeRetweets: false,
+        includeReplies: false,
+        owner: config.owner ?? "",
+        repo: config.repo ?? "",
+        branch: config.branch ?? "main",
+        filePath: config.filePath ?? "CHANGELOG.md",
+      };
+    } else {
+      const config = source.sourceConfig as XAccountConfig;
+      this.sourceForm = {
+        name: source.name,
+        sourceType: source.sourceType,
+        handle: config.handle ?? "",
+        maxTweets: config.maxTweets ?? 20,
+        hoursBack: config.hoursBack ?? 0,
+        includeRetweets: config.includeRetweets ?? false,
+        includeReplies: config.includeReplies ?? false,
+        owner: "",
+        repo: "",
+        branch: "main",
+        filePath: "CHANGELOG.md",
+      };
+    }
     this.showSourceForm = true;
   }
 
@@ -1067,6 +1121,10 @@ export class SettingsPageElement extends LitElement {
       hoursBack: 0,
       includeRetweets: false,
       includeReplies: false,
+      owner: "",
+      repo: "",
+      branch: "main",
+      filePath: "CHANGELOG.md",
     };
     this.showSourceForm = true;
   }
@@ -1082,6 +1140,10 @@ export class SettingsPageElement extends LitElement {
       hoursBack: 0,
       includeRetweets: false,
       includeReplies: false,
+      owner: "",
+      repo: "",
+      branch: "main",
+      filePath: "CHANGELOG.md",
     };
   }
 
@@ -1532,9 +1594,23 @@ export class SettingsPageElement extends LitElement {
     `;
   }
 
+  private renderSourceMeta(source: NewsSourceDefinition) {
+    switch (source.sourceType) {
+      case "x-account": {
+        const config = source.sourceConfig as XAccountConfig;
+        return html`<span>Handle: ${config.handle}</span>`;
+      }
+      case "github": {
+        const config = source.sourceConfig as GitHubChangelogConfig;
+        return html`<span>${config.owner}/${config.repo}</span>`;
+      }
+      default:
+        return "";
+    }
+  }
+
   private renderSourceItem(source: NewsSourceDefinition) {
     const isFetching = this.fetchingSourceIds.has(source.id);
-    const config = source.sourceConfig as XAccountConfig;
     const sourceTypeLabel =
       SOURCE_TYPES.find((t) => t.value === source.sourceType)?.label ??
       source.sourceType;
@@ -1552,9 +1628,7 @@ export class SettingsPageElement extends LitElement {
             <span class="task-type">${sourceTypeLabel}</span>
           </div>
           <div class="task-meta">
-            ${source.sourceType === "x-account"
-              ? html`<span>Handle: ${config.handle}</span>`
-              : ""}
+            ${this.renderSourceMeta(source)}
             <span>前回取得: ${this.formatDateTime(source.lastFetchedAt)}</span>
           </div>
         </div>
@@ -1634,7 +1708,9 @@ export class SettingsPageElement extends LitElement {
 
         ${this.sourceForm.sourceType === "x-account"
           ? this.renderXAccountFields()
-          : ""}
+          : this.sourceForm.sourceType === "github"
+            ? this.renderGitHubFields()
+            : ""}
 
         <div class="task-form-actions">
           <button
@@ -1642,7 +1718,9 @@ export class SettingsPageElement extends LitElement {
             ?disabled="${this.loading ||
             !this.sourceForm.name ||
             (this.sourceForm.sourceType === "x-account" &&
-              !this.sourceForm.handle)}"
+              !this.sourceForm.handle) ||
+            (this.sourceForm.sourceType === "github" &&
+              (!this.sourceForm.owner || !this.sourceForm.repo))}"
             @click="${this.handleSourceFormSubmit}"
           >
             ${isEditing ? "更新" : "作成"}
@@ -1737,6 +1815,72 @@ export class SettingsPageElement extends LitElement {
             };
           }}"
         ></div>
+      </div>
+    `;
+  }
+
+  private renderGitHubFields() {
+    return html`
+      <div class="task-form-row">
+        <div class="form-group">
+          <label>Owner</label>
+          <input
+            type="text"
+            .value="${this.sourceForm.owner}"
+            @input="${(e: Event) => {
+              this.sourceForm = {
+                ...this.sourceForm,
+                owner: (e.target as HTMLInputElement).value,
+              };
+            }}"
+            placeholder="例: anthropics"
+          />
+          <div class="description">GitHubユーザー名または組織名</div>
+        </div>
+        <div class="form-group">
+          <label>Repository</label>
+          <input
+            type="text"
+            .value="${this.sourceForm.repo}"
+            @input="${(e: Event) => {
+              this.sourceForm = {
+                ...this.sourceForm,
+                repo: (e.target as HTMLInputElement).value,
+              };
+            }}"
+            placeholder="例: claude-code"
+          />
+        </div>
+      </div>
+      <div class="task-form-row">
+        <div class="form-group">
+          <label>Branch</label>
+          <input
+            type="text"
+            .value="${this.sourceForm.branch}"
+            @input="${(e: Event) => {
+              this.sourceForm = {
+                ...this.sourceForm,
+                branch: (e.target as HTMLInputElement).value,
+              };
+            }}"
+            placeholder="main"
+          />
+        </div>
+        <div class="form-group">
+          <label>File Path</label>
+          <input
+            type="text"
+            .value="${this.sourceForm.filePath}"
+            @input="${(e: Event) => {
+              this.sourceForm = {
+                ...this.sourceForm,
+                filePath: (e.target as HTMLInputElement).value,
+              };
+            }}"
+            placeholder="CHANGELOG.md"
+          />
+        </div>
       </div>
     `;
   }
