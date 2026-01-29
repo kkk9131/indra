@@ -1124,3 +1124,38 @@ News機能タイムアウト修正
 ### 関連タスク
 
 X投稿ワークフローUI完結実装
+
+---
+
+## 2026-01-29 14:10 [IMPL] Claude Agent SDKストリーミング入力モード基盤を導入
+
+### 実装内容
+
+- [IMPL] `src/llm/types.ts` - `ContentBlock`, `MultimodalMessage`, `AgentHooks`, `cancelled`イベント型を追加
+- [IMPL] `src/llm/message-queue.ts` - 優先度付きメッセージキュー（将来のストリーミング入力用）を新規作成
+- [IMPL] `src/llm/agent-sdk.ts` - `AbortSignal`統合、マルチモーダルメッセージ対応、フック呼び出し追加
+- [IMPL] `src/gateway/server.ts` - `chat.send`に画像パラメータ追加、`chat.cancel`ハンドラー追加、`AbortController`管理
+- [IMPL] `ui/src/services/ws-client.ts` - `chatSend`（画像対応）、`chatCancel`メソッド追加
+- [IMPL] `ui/src/ui/chat-ui.ts` - 画像添付UI、キャンセルボタン、プレビュー機能追加
+- [REFACTOR] code-simplifierで重複コード統合、型ガード関数モジュール化
+
+### 成功
+
+- ビルド・リント通過
+- テスト全件パス（12 passed, 13 skipped）
+- UIバンドルサイズ微減（246.17KB → 245.93KB）
+
+### 失敗/課題
+
+- SDK制限: Claude Agent SDK 0.2.xは`AsyncIterable<SDKUserMessage>`での画像送信に未対応
+- 回避策: 画像を含むメッセージはテキストのみ抽出して処理（警告ログ出力）
+
+### 学び
+
+- SDK型調査: `SDKUserMessage`は`parent_tool_use_id`と`session_id`が必須フィールド
+- 段階的導入: 将来のSDK対応に備えて型定義とメッセージキューの基盤を先行実装
+- リファクタリング効果: `handleAgentChat`と`handleAgentChatMultimodal`の統合で約40行削減
+
+### 関連タスク
+
+ストリーミング入力モード導入計画

@@ -4,18 +4,73 @@ import type {
   AgentEvent,
   AgentOptions,
   ChatOptions,
+  ContentBlock,
   LLMProvider,
   LLMProviderConfig,
   Message,
+  MultimodalMessage,
 } from "./types.js";
 
 type ClaudeModel = "opus" | "sonnet" | "haiku";
 
+interface TextBlock {
+  type: "text";
+  text: string;
+}
+
+interface ToolUseBlock {
+  type: "tool_use";
+  id: string;
+  name: string;
+  input: unknown;
+}
+
+interface ToolResultBlock {
+  type: "tool_result";
+  tool_use_id: string;
+  content: unknown;
+}
+
+function isTextBlock(block: unknown): block is TextBlock {
+  return (
+    typeof block === "object" &&
+    block !== null &&
+    (block as { type?: string }).type === "text" &&
+    typeof (block as { text?: string }).text === "string"
+  );
+}
+
+function isToolUseBlock(block: unknown): block is ToolUseBlock {
+  return (
+    typeof block === "object" &&
+    block !== null &&
+    (block as { type?: string }).type === "tool_use"
+  );
+}
+
+function isToolResultBlock(block: unknown): block is ToolResultBlock {
+  return (
+    typeof block === "object" &&
+    block !== null &&
+    (block as { type?: string }).type === "tool_result"
+  );
+}
+
 function extractTextFromContent(content: unknown[]): string {
   return content
-    .filter((block): block is { text: string } => "text" in (block as object))
+    .filter(isTextBlock)
     .map((block) => block.text)
     .join("");
+}
+
+function hasImageContent(messages: (Message | MultimodalMessage)[]): boolean {
+  return messages.some((msg) => {
+    if (typeof msg.content === "string") return false;
+    return msg.content.some(
+      (block: ContentBlock) =>
+        typeof block === "object" && block.type === "image",
+    );
+  });
 }
 
 export class AgentSDKProvider implements LLMProvider {
@@ -61,91 +116,108 @@ export class AgentSDKProvider implements LLMProvider {
   }
 
   async *chatStreamWithAgent(
-    messages: Message[],
+    messages: Message[] | MultimodalMessage[],
     options?: AgentChatOptions,
   ): AsyncIterable<AgentEvent> {
     const agentOpts = options?.agent ?? {};
+    const signal = options?.signal;
+    const hooks = options?.hooks;
+
+    // Check if cancelled before starting
+    if (signal?.aborted) {
+      const reason =
+        signal.reason instanceof Error
+          ? signal.reason.message
+          : String(signal.reason ?? "Cancelled");
+      await hooks?.onCancel?.(reason);
+      yield { type: "cancelled", reason };
+      return;
+    }
+
+    // Note: Full streaming input with images will be supported in future SDK versions.
+    // For now, we extract text content from multimodal messages.
+    const textMessages = this.normalizeToTextMessages(messages);
     const queryOptions = this.buildAgentQueryOptions(
-      messages,
+      textMessages,
       options,
       agentOpts,
     );
 
+    // Log if images were present but stripped
+    if (hasImageContent(messages)) {
+      console.warn(
+        "[AgentSDK] Images in messages are not yet fully supported by the SDK. Text content was extracted.",
+      );
+    }
+
     let turnNumber = 0;
 
-    for await (const message of query(queryOptions)) {
-      // Handle assistant text messages
-      if (message.type === "assistant" && message.message?.content) {
-        const content = message.message.content as unknown[];
-        for (const block of content) {
-          if (this.isTextBlock(block)) {
-            yield { type: "text", text: block.text };
-          } else if (this.isToolUseBlock(block)) {
-            yield {
-              type: "tool_start",
-              tool: block.name,
-              input: block.input,
-              toolUseId: block.id,
-            };
+    try {
+      for await (const message of query(queryOptions)) {
+        // Check for cancellation
+        if (signal?.aborted) {
+          const reason =
+            signal.reason instanceof Error
+              ? signal.reason.message
+              : String(signal.reason ?? "Cancelled");
+          await hooks?.onCancel?.(reason);
+          yield { type: "cancelled", reason };
+          return;
+        }
+
+        // Handle assistant text messages
+        if (message.type === "assistant" && message.message?.content) {
+          const content = message.message.content as unknown[];
+          for (const block of content) {
+            if (isTextBlock(block)) {
+              yield { type: "text", text: block.text };
+            } else if (isToolUseBlock(block)) {
+              await hooks?.onToolStart?.(block.name, block.input);
+              yield {
+                type: "tool_start",
+                tool: block.name,
+                input: block.input,
+                toolUseId: block.id,
+              };
+            }
           }
         }
-      }
 
-      // Handle tool results
-      if (message.type === "user" && message.message?.content) {
-        const content = message.message.content as unknown[];
-        for (const block of content) {
-          if (this.isToolResultBlock(block)) {
-            yield {
-              type: "tool_result",
-              tool: block.tool_use_id,
-              result: this.extractToolResult(block.content),
-              toolUseId: block.tool_use_id,
-            };
+        // Handle tool results
+        if (message.type === "user" && message.message?.content) {
+          const content = message.message.content as unknown[];
+          for (const block of content) {
+            if (isToolResultBlock(block)) {
+              const result = this.extractToolResult(block.content);
+              await hooks?.onToolEnd?.(block.tool_use_id, result);
+              yield {
+                type: "tool_result",
+                tool: block.tool_use_id,
+                result,
+                toolUseId: block.tool_use_id,
+              };
+            }
           }
+          turnNumber++;
+          await hooks?.onTurnComplete?.(turnNumber);
+          yield { type: "turn_complete", turnNumber };
         }
-        turnNumber++;
-        yield { type: "turn_complete", turnNumber };
-      }
 
-      // Handle final result
-      if (
-        message.type === "result" &&
-        message.subtype === "success" &&
-        message.result
-      ) {
-        yield { type: "done", result: message.result };
+        // Handle final result
+        if (
+          message.type === "result" &&
+          message.subtype === "success" &&
+          message.result
+        ) {
+          yield { type: "done", result: message.result };
+        }
       }
+    } catch (error) {
+      if (error instanceof Error) {
+        await hooks?.onError?.(error);
+      }
+      throw error;
     }
-  }
-
-  private isTextBlock(block: unknown): block is { type: "text"; text: string } {
-    return (
-      typeof block === "object" &&
-      block !== null &&
-      (block as { type?: string }).type === "text" &&
-      typeof (block as { text?: string }).text === "string"
-    );
-  }
-
-  private isToolUseBlock(
-    block: unknown,
-  ): block is { type: "tool_use"; id: string; name: string; input: unknown } {
-    return (
-      typeof block === "object" &&
-      block !== null &&
-      (block as { type?: string }).type === "tool_use"
-    );
-  }
-
-  private isToolResultBlock(
-    block: unknown,
-  ): block is { type: "tool_result"; tool_use_id: string; content: unknown } {
-    return (
-      typeof block === "object" &&
-      block !== null &&
-      (block as { type?: string }).type === "tool_result"
-    );
   }
 
   private extractToolResult(content: unknown): string {
@@ -154,16 +226,26 @@ export class AgentSDKProvider implements LLMProvider {
     }
     if (Array.isArray(content)) {
       return content
-        .filter(
-          (item): item is { type: "text"; text: string } =>
-            typeof item === "object" &&
-            item !== null &&
-            (item as { type?: string }).type === "text",
-        )
+        .filter(isTextBlock)
         .map((item) => item.text)
         .join("\n");
     }
     return JSON.stringify(content);
+  }
+
+  private normalizeToTextMessages(
+    messages: Message[] | MultimodalMessage[],
+  ): Message[] {
+    return messages.map((msg) => {
+      if (typeof msg.content === "string") {
+        return msg as Message;
+      }
+      const textContent = msg.content
+        .filter(isTextBlock)
+        .map((block) => block.text)
+        .join("\n");
+      return { role: msg.role, content: textContent };
+    });
   }
 
   private buildAgentQueryOptions(

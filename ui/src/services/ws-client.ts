@@ -66,7 +66,14 @@ export type WSClientEvent =
   | "news.updated"
   | "xpost.progress"
   | "xpost.completed"
-  | "xpost.failed";
+  | "xpost.failed"
+  | "chat.cancelled";
+
+// Image attachment type for chat
+export interface ChatImage {
+  data: string; // Base64 encoded
+  mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+}
 
 // XPost Types
 export type XPostWorkflowStage =
@@ -445,6 +452,29 @@ export class WSClientService extends EventTarget {
       throw new Error(res.error?.message ?? "Failed to generate X post");
     }
     return res.payload as { status: string };
+  }
+
+  // ===== Chat API Methods =====
+
+  async chatSend(params: {
+    message: string;
+    history?: Array<{ role: string; content: string }>;
+    agentMode?: boolean;
+    images?: ChatImage[];
+  }): Promise<{ requestId: string }> {
+    const res = await this.sendRequest("chat.send", params);
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to send chat message");
+    }
+    return res.payload as { requestId: string };
+  }
+
+  async chatCancel(requestId: string): Promise<{ cancelled: boolean }> {
+    const res = await this.sendRequest("chat.cancel", { requestId });
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to cancel chat request");
+    }
+    return res.payload as { cancelled: boolean };
   }
 }
 

@@ -1,10 +1,20 @@
 import { LitElement, css, html, svg } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { buildWsUrl } from "../services/ws-url.js";
 
 // Lucide icons
 const userIcon = svg`<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>`;
 const botIcon = svg`<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>`;
 const toolIcon = svg`<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>`;
+const imageIcon = svg`<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>`;
+const xIcon = svg`<path d="M18 6 6 18"/><path d="m6 6 12 12"/>`;
+
+interface AttachedImage {
+  id: string;
+  data: string;
+  mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+  preview: string;
+}
 
 interface ToolUse {
   toolUseId: string;
@@ -291,13 +301,111 @@ export class ChatUIElement extends LitElement {
     .tool-result-toggle:hover {
       text-decoration: underline;
     }
+
+    .input-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+
+    .image-attach-btn {
+      background: var(--bg-tertiary, #f5f5f5);
+      border: 1px solid var(--border, #e0e0e0);
+      color: var(--text-secondary, #636e72);
+      padding: 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .image-attach-btn:hover {
+      background: var(--border, #e0e0e0);
+      color: var(--text-primary, #2d3436);
+    }
+
+    .image-attach-btn svg {
+      width: 20px;
+      height: 20px;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
+
+    .image-previews {
+      display: flex;
+      gap: 8px;
+      padding: 8px 16px 0;
+      flex-wrap: wrap;
+    }
+
+    .image-preview {
+      position: relative;
+      width: 60px;
+      height: 60px;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border, #e0e0e0);
+    }
+
+    .image-preview img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .image-preview-remove {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 20px;
+      height: 20px;
+      background: rgba(0, 0, 0, 0.6);
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+
+    .image-preview-remove svg {
+      width: 12px;
+      height: 12px;
+      stroke: white;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
+
+    .image-preview-remove:hover {
+      background: rgba(211, 47, 47, 0.8);
+    }
+
+    .cancel-btn {
+      background: #d32f2f;
+      padding: 10px 16px;
+    }
+
+    .cancel-btn:hover:not(:disabled) {
+      background: #b71c1c;
+    }
+
+    .hidden-input {
+      display: none;
+    }
   `;
 
   @property({ type: Boolean })
   open = false;
 
   @property()
-  wsUrl = "ws://localhost:3001";
+  wsUrl = buildWsUrl();
 
   @state()
   messages: Message[] = [];
@@ -314,7 +422,14 @@ export class ChatUIElement extends LitElement {
   @state()
   private sessionId?: string;
 
+  @state()
+  private attachedImages: AttachedImage[] = [];
+
+  @state()
+  private currentRequestId?: string;
+
   private readonly agentMode = true;
+  private readonly MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 
   private ws?: WebSocket;
   private currentStreamingId?: string;
@@ -396,6 +511,10 @@ export class ChatUIElement extends LitElement {
         this.appendChunk(frame.payload?.text ?? "");
       } else if (frame.event === "chat.done" && this.currentStreamingId) {
         this.finishStreaming();
+      } else if (frame.event === "chat.cancelled" && this.currentStreamingId) {
+        this.handleCancelled(
+          (frame.payload as { reason?: string })?.reason ?? "Cancelled",
+        );
       } else if (
         frame.event === "agent.tool_start" &&
         this.currentStreamingId
@@ -417,6 +536,24 @@ export class ChatUIElement extends LitElement {
     }
   }
 
+  private handleCancelled(reason: string): void {
+    if (!this.currentStreamingId) return;
+
+    this.messages = this.messages.map((msg) => {
+      if (msg.id !== this.currentStreamingId) return msg;
+      const toolUses = msg.toolUses?.map((t) => ({ ...t, isRunning: false }));
+      return {
+        ...msg,
+        content: msg.content + `\n\n[キャンセルされました: ${reason}]`,
+        isStreaming: false,
+        toolUses,
+      };
+    });
+    this.currentStreamingId = undefined;
+    this.currentRequestId = undefined;
+    this.isSending = false;
+  }
+
   private appendChunk(text: string): void {
     if (!this.currentStreamingId) return;
 
@@ -426,13 +563,7 @@ export class ChatUIElement extends LitElement {
         : msg,
     );
 
-    // Auto-scroll to bottom
-    this.updateComplete.then(() => {
-      const messagesEl = this.shadowRoot?.querySelector(".messages");
-      if (messagesEl) {
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      }
-    });
+    this.scrollToBottom();
   }
 
   private finishStreaming(): void {
@@ -445,6 +576,7 @@ export class ChatUIElement extends LitElement {
       return { ...msg, isStreaming: false, toolUses };
     });
     this.currentStreamingId = undefined;
+    this.currentRequestId = undefined;
     this.isSending = false;
   }
 
@@ -532,6 +664,70 @@ export class ChatUIElement extends LitElement {
       .map((m) => ({ role: m.role, content: m.content }));
   }
 
+  private handleImageSelect(e: Event): void {
+    const input = e.target as HTMLInputElement;
+    const files = input.files;
+    if (!files) return;
+
+    for (const file of Array.from(files)) {
+      if (file.size > this.MAX_IMAGE_SIZE) {
+        console.warn(`Image ${file.name} exceeds 5MB limit`);
+        continue;
+      }
+
+      const validTypes = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+      if (!validTypes.includes(file.type)) {
+        console.warn(`Invalid image type: ${file.type}`);
+        continue;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const base64Data = dataUrl.split(",")[1];
+        const preview = dataUrl;
+
+        this.attachedImages = [
+          ...this.attachedImages,
+          {
+            id: crypto.randomUUID(),
+            data: base64Data,
+            mediaType: file.type as AttachedImage["mediaType"],
+            preview,
+          },
+        ];
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Reset input
+    input.value = "";
+  }
+
+  private removeImage(id: string): void {
+    this.attachedImages = this.attachedImages.filter((img) => img.id !== id);
+  }
+
+  private triggerImageInput(): void {
+    const input = this.shadowRoot?.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    input?.click();
+  }
+
+  private cancelRequest(): void {
+    if (!this.currentRequestId || !this.ws) return;
+
+    this.ws.send(
+      JSON.stringify({
+        type: "req",
+        id: crypto.randomUUID(),
+        method: "chat.cancel",
+        params: { requestId: this.currentRequestId },
+      }),
+    );
+  }
+
   private sendMessage(): void {
     if (this.isSendDisabled) {
       return;
@@ -558,6 +754,7 @@ export class ChatUIElement extends LitElement {
     this.isSending = true;
 
     const requestId = crypto.randomUUID();
+    this.currentRequestId = requestId;
     const history = this.getHistory().slice(0, -1); // Exclude the empty streaming message
 
     // Create promise for response tracking
@@ -568,28 +765,37 @@ export class ChatUIElement extends LitElement {
       this.finishStreaming();
     });
 
+    // Build params with optional images
+    const params: {
+      message: string;
+      history: Array<{ role: string; content: string }>;
+      agentMode: boolean;
+      images?: Array<{ data: string; mediaType: string }>;
+    } = {
+      message: this.inputText,
+      history,
+      agentMode: this.agentMode,
+    };
+
+    if (this.attachedImages.length > 0) {
+      params.images = this.attachedImages.map((img) => ({
+        data: img.data,
+        mediaType: img.mediaType,
+      }));
+    }
+
     this.ws?.send(
       JSON.stringify({
         type: "req",
         id: requestId,
         method: "chat.send",
-        params: {
-          message: this.inputText,
-          history,
-          agentMode: this.agentMode,
-        },
+        params,
       }),
     );
 
     this.inputText = "";
-
-    // Auto-scroll
-    this.updateComplete.then(() => {
-      const messagesEl = this.shadowRoot?.querySelector(".messages");
-      if (messagesEl) {
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      }
-    });
+    this.attachedImages = [];
+    this.scrollToBottom();
   }
 
   private handleUIClose(): void {
@@ -654,17 +860,67 @@ export class ChatUIElement extends LitElement {
         )}
       </div>
 
+      ${this.attachedImages.length > 0
+        ? html`
+            <div class="image-previews">
+              ${this.attachedImages.map(
+                (img) => html`
+                  <div class="image-preview">
+                    <img src="${img.preview}" alt="Attached" />
+                    <button
+                      class="image-preview-remove"
+                      @click="${() => this.removeImage(img.id)}"
+                      title="Remove"
+                    >
+                      <svg viewBox="0 0 24 24">${xIcon}</svg>
+                    </button>
+                  </div>
+                `,
+              )}
+            </div>
+          `
+        : null}
+
       <div class="input-area">
-        <textarea
-          .value="${this.inputText}"
-          @input="${this.handleInput}"
-          @keydown="${this.handleKeydown}"
-          placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
+        <input
+          type="file"
+          class="hidden-input"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          multiple
+          @change="${this.handleImageSelect}"
+        />
+        <button
+          class="image-attach-btn"
+          @click="${this.triggerImageInput}"
           ?disabled="${this.isSending}"
-        ></textarea>
-        <button ?disabled="${this.isSendDisabled}" @click="${this.sendMessage}">
-          ${this.isSending ? "..." : "Send"}
+          title="画像を添付"
+        >
+          <svg viewBox="0 0 24 24">${imageIcon}</svg>
         </button>
+        <div class="input-row" style="flex: 1; display: flex; gap: 8px;">
+          <textarea
+            .value="${this.inputText}"
+            @input="${this.handleInput}"
+            @keydown="${this.handleKeydown}"
+            placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
+            ?disabled="${this.isSending}"
+            style="flex: 1;"
+          ></textarea>
+          ${this.isSending
+            ? html`
+                <button class="cancel-btn" @click="${this.cancelRequest}">
+                  Cancel
+                </button>
+              `
+            : html`
+                <button
+                  ?disabled="${this.isSendDisabled}"
+                  @click="${this.sendMessage}"
+                >
+                  Send
+                </button>
+              `}
+        </div>
       </div>
 
       <div class="status ${this.isConnected ? "connected" : "disconnected"}">
