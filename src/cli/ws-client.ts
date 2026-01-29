@@ -20,6 +20,20 @@ export interface ChatChunk {
   text: string;
 }
 
+function withGatewayToken(url: string): string {
+  const token = process.env.GATEWAY_WS_TOKEN ?? process.env.INDRA_WS_TOKEN;
+  if (!token) return url;
+  try {
+    const parsed = new URL(url);
+    if (!parsed.searchParams.has("token")) {
+      parsed.searchParams.set("token", token);
+    }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 export class WSClient {
   private ws?: WebSocket;
   private options: Required<WSClientOptions>;
@@ -44,7 +58,7 @@ export class WSClient {
 
   constructor(options: WSClientOptions = {}) {
     this.options = {
-      url: options.url ?? "ws://localhost:3001",
+      url: withGatewayToken(options.url ?? "ws://localhost:3001"),
       reconnect: options.reconnect ?? true,
       reconnectInterval: options.reconnectInterval ?? 1000,
       maxReconnectAttempts: options.maxReconnectAttempts ?? 5,

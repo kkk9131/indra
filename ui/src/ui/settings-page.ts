@@ -1,5 +1,6 @@
 import { LitElement, css, html, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import { buildWsUrl } from "../services/ws-url.js";
 
 // Lucide icon - Bot
 const botIcon = svg`<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>`;
@@ -629,7 +630,7 @@ export class SettingsPageElement extends LitElement {
   }
 
   private connectWebSocket(): void {
-    this.ws = new WebSocket("ws://localhost:3001");
+    this.ws = new WebSocket(buildWsUrl());
 
     this.ws.onopen = () => {
       this.loadConfig();
