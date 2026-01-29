@@ -1,9 +1,6 @@
 import type { Config } from "../../config/index.js";
 
-import {
-  handleNewsList,
-  handleNewsRefresh,
-} from "./news.js";
+import { handleNewsList, handleNewsRefresh } from "./news.js";
 import {
   handleScheduleList,
   handleScheduleGet,
@@ -30,6 +27,16 @@ import {
 } from "./auth.js";
 import { handleLogsList, handleLogsRefresh } from "./logs.js";
 import { handleAnalyticsRunNow } from "./analytics.js";
+import {
+  handleNewsSourceList,
+  handleNewsSourceGet,
+  handleNewsSourceCreate,
+  handleNewsSourceUpdate,
+  handleNewsSourceDelete,
+  handleNewsSourceToggle,
+  handleNewsSourceFetchNow,
+} from "./news-source.js";
+import { handleXpostGenerate } from "./xpost.js";
 import type { GatewayContext, RequestHandler } from "./context.js";
 
 export type { GatewayContext, RequestHandler } from "./context.js";
@@ -87,12 +94,30 @@ export function createHandlerRegistry(
     getErrorMessage: ctx.getErrorMessage,
   };
 
+  const newsSourceCtx = {
+    newsSourceStore: ctx.newsSourceStore,
+    newsStore: ctx.newsStore,
+    broadcast: ctx.broadcast,
+    sendSuccess: ctx.sendSuccess,
+    sendError: ctx.sendError,
+    getErrorMessage: ctx.getErrorMessage,
+  };
+
+  const xpostCtx = {
+    newsStore: ctx.newsStore,
+    xpostWorkflowService: ctx.xpostWorkflowService,
+    broadcast: ctx.broadcast,
+    sendSuccess: ctx.sendSuccess,
+    sendError: ctx.sendError,
+  };
+
   return new Map<string, RequestHandler>([
     [
       "ping",
       (ws, frame) => ctx.sendSuccess(ws, frame.id, { pong: Date.now() }),
     ],
     ["chat.send", ctx.handlers.handleChatSend],
+    ["chat.cancel", ctx.handlers.handleChatCancel],
     [
       "config.get",
       (ws, frame) =>
@@ -106,7 +131,12 @@ export function createHandlerRegistry(
           ctx.configManager.set(configUpdate);
           ctx.sendSuccess(ws, frame.id, { config: ctx.configManager.get() });
         } catch (error) {
-          ctx.sendError(ws, frame.id, "CONFIG_ERROR", ctx.getErrorMessage(error));
+          ctx.sendError(
+            ws,
+            frame.id,
+            "CONFIG_ERROR",
+            ctx.getErrorMessage(error),
+          );
         }
       },
     ],
@@ -117,10 +147,7 @@ export function createHandlerRegistry(
     ["post.reject", (ws, frame) => handlePostReject(postCtx, ws, frame)],
     ["post.edit", (ws, frame) => handlePostEdit(postCtx, ws, frame)],
     ["auth.x.start", (ws, frame) => handleAuthXStart(authCtx, ws, frame)],
-    [
-      "auth.x.callback",
-      (ws, frame) => handleAuthXCallback(authCtx, ws, frame),
-    ],
+    ["auth.x.callback", (ws, frame) => handleAuthXCallback(authCtx, ws, frame)],
     ["auth.x.status", (ws, frame) => handleAuthXStatus(authCtx, ws, frame)],
     ["auth.x.logout", (ws, frame) => handleAuthXLogout(authCtx, ws, frame)],
     [
@@ -139,10 +166,7 @@ export function createHandlerRegistry(
       "schedule.list",
       (ws, frame) => handleScheduleList(scheduleCtx, ws, frame),
     ],
-    [
-      "schedule.get",
-      (ws, frame) => handleScheduleGet(scheduleCtx, ws, frame),
-    ],
+    ["schedule.get", (ws, frame) => handleScheduleGet(scheduleCtx, ws, frame)],
     [
       "schedule.create",
       (ws, frame) => handleScheduleCreate(scheduleCtx, ws, frame),
@@ -167,13 +191,37 @@ export function createHandlerRegistry(
       "schedule.taskTypes",
       (ws, frame) => handleScheduleTaskTypes(scheduleCtx, ws, frame),
     ],
-    ["newsSource.list", ctx.handlers.handleNewsSourceList],
-    ["newsSource.get", ctx.handlers.handleNewsSourceGet],
-    ["newsSource.create", ctx.handlers.handleNewsSourceCreate],
-    ["newsSource.update", ctx.handlers.handleNewsSourceUpdate],
-    ["newsSource.delete", ctx.handlers.handleNewsSourceDelete],
-    ["newsSource.toggle", ctx.handlers.handleNewsSourceToggle],
-    ["newsSource.fetchNow", ctx.handlers.handleNewsSourceFetchNow],
-    ["xpost.generate", ctx.handlers.handleXpostGenerate],
+    [
+      "newsSource.list",
+      (ws, frame) => handleNewsSourceList(newsSourceCtx, ws, frame),
+    ],
+    [
+      "newsSource.get",
+      (ws, frame) => handleNewsSourceGet(newsSourceCtx, ws, frame),
+    ],
+    [
+      "newsSource.create",
+      (ws, frame) => handleNewsSourceCreate(newsSourceCtx, ws, frame),
+    ],
+    [
+      "newsSource.update",
+      (ws, frame) => handleNewsSourceUpdate(newsSourceCtx, ws, frame),
+    ],
+    [
+      "newsSource.delete",
+      (ws, frame) => handleNewsSourceDelete(newsSourceCtx, ws, frame),
+    ],
+    [
+      "newsSource.toggle",
+      (ws, frame) => handleNewsSourceToggle(newsSourceCtx, ws, frame),
+    ],
+    [
+      "newsSource.fetchNow",
+      (ws, frame) => handleNewsSourceFetchNow(newsSourceCtx, ws, frame),
+    ],
+    [
+      "xpost.generate",
+      (ws, frame) => handleXpostGenerate(xpostCtx, ws, frame),
+    ],
   ]);
 }

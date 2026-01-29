@@ -8,8 +8,10 @@ import {
   AgentSDKProvider,
   type AgentChatOptions,
   type AgentOptions,
+  type ContentBlock,
   type LLMProvider,
   type Message,
+  type MultimodalMessage,
 } from "../llm/index.js";
 import {
   FrameSchema,
@@ -23,20 +25,11 @@ import {
   type RequestHandler,
 } from "./handlers/index.js";
 import { ApprovalQueue } from "../approval/index.js";
-import {
-  XConnector,
-  type Platform,
-} from "../connectors/index.js";
+import { XConnector, type Platform } from "../connectors/index.js";
 import {
   NewsStore,
   NewsScheduler,
   NewsSourceStore,
-  fetchXAccount,
-  tweetToArticle,
-  type NewsSourceDefinition,
-  type CreateNewsSourceParams,
-  type UpdateNewsSourceParams,
-  type XAccountConfig,
 } from "../news/index.js";
 import {
   XOAuth2Handler,
@@ -61,8 +54,6 @@ import {
 } from "../scheduler/index.js";
 import {
   XPostWorkflowService,
-  type XPostProgressEvent,
-  type XPostWorkflowOptions,
 } from "../xpost/index.js";
 
 interface AgentLogParams {
@@ -168,6 +159,7 @@ export class GatewayServer {
   private requestHandlers: Map<string, RequestHandler>;
   private port: number;
   private clients: Set<WebSocket> = new Set();
+  private abortControllers = new Map<string, AbortController>();
 
   constructor(port = 3001) {
     this.port = port;
@@ -480,9 +472,11 @@ export class GatewayServer {
       isDiscordBotReady: () => this.isDiscordBotReady(),
       newsStore: this.newsStore,
       newsScheduler: this.newsScheduler,
+      newsSourceStore: this.newsSourceStore,
       logStore: this.logStore,
       analyticsScheduler: this.analyticsScheduler,
       schedulerManager: this.schedulerManager,
+      xpostWorkflowService: this.xpostWorkflowService,
       createLLMProvider: (config) => this.createLLMProvider(config),
       broadcast: (event, payload) => this.broadcast(event, payload),
       sendSuccess,
@@ -490,15 +484,8 @@ export class GatewayServer {
       getErrorMessage,
       handlers: {
         handleChatSend: this.handleChatSend.bind(this),
+        handleChatCancel: this.handleChatCancel.bind(this),
         handleLLMTest: this.handleLLMTest.bind(this),
-        handleNewsSourceList: this.handleNewsSourceList.bind(this),
-        handleNewsSourceGet: this.handleNewsSourceGet.bind(this),
-        handleNewsSourceCreate: this.handleNewsSourceCreate.bind(this),
-        handleNewsSourceUpdate: this.handleNewsSourceUpdate.bind(this),
-        handleNewsSourceDelete: this.handleNewsSourceDelete.bind(this),
-        handleNewsSourceToggle: this.handleNewsSourceToggle.bind(this),
-        handleNewsSourceFetchNow: this.handleNewsSourceFetchNow.bind(this),
-        handleXpostGenerate: this.handleXpostGenerate.bind(this),
       },
     };
   }
@@ -548,39 +535,132 @@ export class GatewayServer {
     ws: WebSocket,
     frame: RequestFrame,
   ): Promise<void> {
+    const requestId = frame.id;
+
     try {
       const params = frame.params as {
         message: string;
         history?: Message[];
         agentMode?: boolean;
         agentOptions?: AgentOptions;
+        images?: Array<{
+          data: string;
+          mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+        }>;
       };
       const config = this.configManager.get();
       const provider = this.createLLMProvider(config.llm);
 
-      const messages: Message[] = [
-        ...(params.history ?? []),
-        { role: "user", content: params.message },
-      ];
+      // Create AbortController for this request
+      const abortController = new AbortController();
+      this.abortControllers.set(requestId, abortController);
 
-      // Use agent mode if requested
-      if (params.agentMode && provider.chatStreamWithAgent) {
-        await this.handleAgentChat(
-          ws,
-          provider,
-          messages,
-          config,
-          params.agentOptions,
-        );
+      // Build messages with optional images
+      const hasImages = params.images && params.images.length > 0;
+
+      if (hasImages) {
+        // Build multimodal message
+        const contentBlocks: ContentBlock[] = [];
+
+        // Add images first
+        for (const img of params.images!) {
+          contentBlocks.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: img.mediaType,
+              data: img.data,
+            },
+          });
+        }
+
+        // Add text
+        contentBlocks.push({
+          type: "text",
+          text: params.message,
+        });
+
+        const multimodalMessages: MultimodalMessage[] = [
+          ...(params.history?.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })) ?? []),
+          { role: "user" as const, content: contentBlocks },
+        ];
+
+        // Use agent mode if requested
+        if (params.agentMode && provider.chatStreamWithAgent) {
+          await this.handleAgentChat(
+            ws,
+            requestId,
+            provider,
+            multimodalMessages,
+            config,
+            params.agentOptions,
+            abortController.signal,
+          );
+        } else {
+          // For non-agent mode with images, fall back to text-only for now
+          const messages: Message[] = [
+            ...(params.history ?? []),
+            { role: "user", content: params.message },
+          ];
+          await this.handleSimpleChat(ws, provider, messages, config);
+        }
       } else {
-        await this.handleSimpleChat(ws, provider, messages, config);
+        const messages: Message[] = [
+          ...(params.history ?? []),
+          { role: "user", content: params.message },
+        ];
+
+        // Use agent mode if requested
+        if (params.agentMode && provider.chatStreamWithAgent) {
+          await this.handleAgentChat(
+            ws,
+            requestId,
+            provider,
+            messages,
+            config,
+            params.agentOptions,
+            abortController.signal,
+          );
+        } else {
+          await this.handleSimpleChat(ws, provider, messages, config);
+        }
       }
 
       ws.send(JSON.stringify(createEvent("chat.done", {})));
-      sendSuccess(ws, frame.id);
+      sendSuccess(ws, frame.id, { requestId });
     } catch (error) {
-      console.error("LLM Error:", error);
-      sendError(ws, frame.id, "LLM_ERROR", getErrorMessage(error));
+      if ((error as Error).name === "AbortError") {
+        ws.send(
+          JSON.stringify(
+            createEvent("chat.cancelled", {
+              requestId,
+              reason: "User cancelled",
+            }),
+          ),
+        );
+        sendSuccess(ws, frame.id, { cancelled: true, requestId });
+      } else {
+        console.error("LLM Error:", error);
+        sendError(ws, frame.id, "LLM_ERROR", getErrorMessage(error));
+      }
+    } finally {
+      this.abortControllers.delete(requestId);
+    }
+  }
+
+  private handleChatCancel(ws: WebSocket, frame: RequestFrame): void {
+    const { requestId } = frame.params as { requestId: string };
+    const controller = this.abortControllers.get(requestId);
+
+    if (controller) {
+      controller.abort("User cancelled");
+      this.abortControllers.delete(requestId);
+      sendSuccess(ws, frame.id, { cancelled: true });
+    } else {
+      sendError(ws, frame.id, "NOT_FOUND", "Request not found");
     }
   }
 
@@ -597,12 +677,23 @@ export class GatewayServer {
     }
   }
 
+  private static readonly DEFAULT_AGENT_TOOLS = [
+    "Read",
+    "Glob",
+    "Grep",
+    "Bash",
+    "WebSearch",
+    "Skill",
+  ];
+
   private async handleAgentChat(
     ws: WebSocket,
+    requestId: string,
     provider: LLMProvider,
-    messages: Message[],
+    messages: Message[] | MultimodalMessage[],
     config: Config,
     agentOptions?: AgentOptions,
+    signal?: AbortSignal,
   ): Promise<void> {
     if (!provider.chatStreamWithAgent) {
       throw new Error("Agent mode not supported by this provider");
@@ -612,16 +703,10 @@ export class GatewayServer {
       systemPrompt: config.llm.systemPrompt,
       agent: {
         maxTurns: agentOptions?.maxTurns ?? 10,
-        tools: agentOptions?.tools ?? [
-          "Read",
-          "Glob",
-          "Grep",
-          "Bash",
-          "WebSearch",
-          "Skill",
-        ],
+        tools: agentOptions?.tools ?? GatewayServer.DEFAULT_AGENT_TOOLS,
         permissionMode: agentOptions?.permissionMode ?? "acceptEdits",
       },
+      signal,
     };
 
     for await (const event of provider.chatStreamWithAgent(messages, options)) {
@@ -672,6 +757,16 @@ export class GatewayServer {
           );
           this.saveAgentLog("turn_complete", { turnNumber: event.turnNumber });
           break;
+        case "cancelled":
+          ws.send(
+            JSON.stringify(
+              createEvent("chat.cancelled", {
+                requestId,
+                reason: event.reason,
+              }),
+            ),
+          );
+          return;
         case "done":
           break;
       }
@@ -699,160 +794,6 @@ export class GatewayServer {
       sendError(ws, frame.id, "LLM_TEST_FAILED", getErrorMessage(error));
     }
   }
-  // ===== NewsSource Handlers =====
-
-  private handleNewsSourceList(ws: WebSocket, frame: RequestFrame): void {
-    const sources = this.newsSourceStore.list();
-    sendSuccess(ws, frame.id, { sources });
-  }
-
-  private handleNewsSourceGet(ws: WebSocket, frame: RequestFrame): void {
-    const { id } = frame.params as { id: string };
-    const source = this.newsSourceStore.get(id);
-    if (!source) {
-      sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
-      return;
-    }
-    sendSuccess(ws, frame.id, { source });
-  }
-
-  private handleNewsSourceCreate(ws: WebSocket, frame: RequestFrame): void {
-    try {
-      const params = frame.params as CreateNewsSourceParams;
-      const source = this.newsSourceStore.create(params);
-      sendSuccess(ws, frame.id, { source });
-      this.broadcast("newsSource.updated", { source });
-    } catch (error) {
-      sendError(ws, frame.id, "CREATE_ERROR", getErrorMessage(error));
-    }
-  }
-
-  private handleNewsSourceUpdate(ws: WebSocket, frame: RequestFrame): void {
-    try {
-      const { id, ...params } = frame.params as {
-        id: string;
-      } & UpdateNewsSourceParams;
-      const source = this.newsSourceStore.update(id, params);
-      if (!source) {
-        sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
-        return;
-      }
-      sendSuccess(ws, frame.id, { source });
-      this.broadcast("newsSource.updated", { source });
-    } catch (error) {
-      sendError(ws, frame.id, "UPDATE_ERROR", getErrorMessage(error));
-    }
-  }
-
-  private handleNewsSourceDelete(ws: WebSocket, frame: RequestFrame): void {
-    const { id } = frame.params as { id: string };
-    const deleted = this.newsSourceStore.delete(id);
-    if (!deleted) {
-      sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
-      return;
-    }
-    sendSuccess(ws, frame.id, { deleted: true });
-    this.broadcast("newsSource.deleted", { id });
-  }
-
-  private handleNewsSourceToggle(ws: WebSocket, frame: RequestFrame): void {
-    const { id, enabled } = frame.params as { id: string; enabled: boolean };
-    const source = this.newsSourceStore.toggle(id, enabled);
-    if (!source) {
-      sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
-      return;
-    }
-    sendSuccess(ws, frame.id, { source });
-    this.broadcast("newsSource.updated", { source });
-  }
-
-  private async handleNewsSourceFetchNow(
-    ws: WebSocket,
-    frame: RequestFrame,
-  ): Promise<void> {
-    const { id } = frame.params as { id: string };
-    const source = this.newsSourceStore.get(id);
-
-    if (!source) {
-      sendError(ws, frame.id, "NOT_FOUND", `Source not found: ${id}`);
-      return;
-    }
-
-    // 即座に開始を返す
-    sendSuccess(ws, frame.id, { status: "started" });
-
-    // バックグラウンドでフェッチ実行
-    this.executeNewsSourceFetch(source).catch((error) => {
-      console.error(`[Gateway] NewsSource fetch failed for ${id}:`, error);
-    });
-  }
-
-  private async executeNewsSourceFetch(
-    source: NewsSourceDefinition,
-  ): Promise<void> {
-    console.log(`[Gateway] NewsSource fetch started for ${source.name}`);
-
-    try {
-      if (source.sourceType === "x-account") {
-        const config = source.sourceConfig as XAccountConfig;
-        const result = await fetchXAccount(config);
-        const articles = result.tweets.map((tweet) => tweetToArticle(tweet));
-
-        if (articles.length > 0) {
-          await this.newsStore.save(articles);
-          this.broadcast("news.updated", { articles: this.newsStore.list() });
-        }
-
-        console.log(
-          `[Gateway] Fetched ${articles.length} articles from ${source.name}`,
-        );
-      }
-
-      const updatedSource = this.newsSourceStore.updateLastFetchedAt(source.id);
-      if (updatedSource) {
-        this.broadcast("newsSource.updated", { source: updatedSource });
-      }
-    } catch (error) {
-      console.error(`[Gateway] NewsSource fetch error:`, error);
-      throw error;
-    }
-  }
-
-  // ===== XPost Handlers =====
-
-  private async handleXpostGenerate(
-    ws: WebSocket,
-    frame: RequestFrame,
-  ): Promise<void> {
-    const { articleId, options } = frame.params as {
-      articleId: string;
-      options?: XPostWorkflowOptions;
-    };
-
-    const article = this.newsStore.getById(articleId);
-    if (!article) {
-      sendError(ws, frame.id, "NOT_FOUND", `Article not found: ${articleId}`);
-      return;
-    }
-
-    // 即座に「開始しました」を返す
-    sendSuccess(ws, frame.id, { status: "started" });
-
-    // バックグラウンドで実行、進捗はbroadcast
-    this.xpostWorkflowService
-      .execute(article, options ?? {}, (event: XPostProgressEvent) => {
-        this.broadcast("xpost.progress", { articleId, ...event });
-      })
-      .then((result) => {
-        this.broadcast("xpost.completed", result);
-      })
-      .catch((error) => {
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
-        this.broadcast("xpost.failed", { articleId, error: errorMessage });
-      });
-  }
-
   // ===== Discord Integration Methods =====
 
   async chatForDiscord(prompt: string): Promise<string> {
