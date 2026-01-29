@@ -24,6 +24,7 @@ export interface Content {
   status: ContentStatus;
   createdAt: number;
   updatedAt: number;
+  scheduledAt?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -39,6 +40,9 @@ export function approvalItemToContent(item: ApprovalItem): Content {
     status: item.status as ContentStatus,
     createdAt: new Date(item.createdAt).getTime(),
     updatedAt: new Date(item.updatedAt).getTime(),
+    scheduledAt: item.scheduledAt
+      ? new Date(item.scheduledAt).getTime()
+      : undefined,
     metadata: {
       prompt: item.prompt,
       postId: item.postId,
@@ -76,9 +80,13 @@ export interface ApiToken {
   createdAt: number;
 }
 
-// Re-export news types from ws-client for consistency
 export type { NewsArticle } from "../services/ws-client.js";
-export type NewsSource = "claude-code" | "blog" | "log-analysis";
+export type NewsSource =
+  | "claude-code"
+  | "blog"
+  | "log-analysis"
+  | "x-account"
+  | "github-changelog";
 
 // Log types - these mirror the backend types in src/logs/types.ts
 // Keeping separate to avoid cross-package dependencies

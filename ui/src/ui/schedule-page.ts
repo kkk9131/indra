@@ -1,11 +1,16 @@
 import { LitElement, css, html, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import type { Content, Platform } from "./types.js";
+import { approvalItemToContent } from "./types.js";
+import { wsClient } from "../services/ws-client.js";
 import "./common/platform-badge.js";
 import "./common/modal.js";
 
 // Lucide icon - Calendar
 const calendarIcon = svg`<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>`;
+
+// Loading spinner icon
+const loadingIcon = svg`<path d="M21 12a9 9 0 1 1-6.219-8.56"/>`;
 
 interface ScheduledContent extends Content {
   scheduledAt: number;
@@ -264,6 +269,61 @@ export class SchedulePageElement extends LitElement {
     .btn-secondary:hover {
       background: var(--border, #e0e0e0);
     }
+
+    .loading-state {
+      text-align: center;
+      padding: 60px 24px;
+      color: var(--text-secondary, #636e72);
+    }
+
+    .loading-icon {
+      width: 32px;
+      height: 32px;
+      margin: 0 auto 16px;
+      animation: spin 1s linear infinite;
+    }
+
+    .loading-icon svg {
+      width: 100%;
+      height: 100%;
+      fill: none;
+      stroke: var(--primary, #2e7d32);
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    @keyframes spin {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .error-state {
+      text-align: center;
+      padding: 60px 24px;
+      background: #ffebee;
+      border-radius: 12px;
+      color: #c62828;
+    }
+
+    .retry-btn {
+      padding: 8px 16px;
+      border: 1px solid #c62828;
+      border-radius: 8px;
+      background: transparent;
+      color: #c62828;
+      cursor: pointer;
+      font-family: inherit;
+      margin-top: 16px;
+    }
+
+    .retry-btn:hover {
+      background: #ffcdd2;
+    }
   `;
 
   @state()
@@ -271,6 +331,15 @@ export class SchedulePageElement extends LitElement {
 
   @state()
   private contents: ScheduledContent[] = [];
+
+  @state()
+  private isLoading = true;
+
+  @state()
+  private error: string | null = null;
+
+  @state()
+  private wsConnected = false;
 
   @state()
   private isModalOpen = false;
@@ -281,64 +350,85 @@ export class SchedulePageElement extends LitElement {
   @state()
   private editedTimeInput = "";
 
+  private handleConnected = () => {
+    this.wsConnected = true;
+    this.loadContents();
+  };
+
+  private handleDisconnected = () => {
+    this.wsConnected = false;
+  };
+
+  private handlePostUpdated = (e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    if (detail?.item) {
+      const content = approvalItemToContent(detail.item);
+      if (content.status === "scheduled" && content.scheduledAt) {
+        // Add or update scheduled item
+        const existing = this.contents.find((c) => c.id === content.id);
+        if (existing) {
+          this.contents = this.contents.map((c) =>
+            c.id === content.id ? (content as ScheduledContent) : c,
+          );
+        } else {
+          this.contents = [...this.contents, content as ScheduledContent].sort(
+            (a, b) => a.scheduledAt - b.scheduledAt,
+          );
+        }
+      } else {
+        // Remove from scheduled list if status changed
+        this.contents = this.contents.filter((c) => c.id !== content.id);
+      }
+    }
+  };
+
   connectedCallback(): void {
     super.connectedCallback();
-    this.generateMockData();
+
+    wsClient.addEventListener("connected", this.handleConnected);
+    wsClient.addEventListener("disconnected", this.handleDisconnected);
+    wsClient.addEventListener("post.updated", this.handlePostUpdated);
+
+    if (!wsClient.isConnected) {
+      wsClient.connect();
+    } else {
+      this.wsConnected = true;
+      this.loadContents();
+    }
   }
 
-  private generateMockData(): void {
-    const now = new Date();
-    const startOfToday = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    ).getTime();
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
 
-    const mockData: ScheduledContent[] = [
-      {
-        id: "1",
-        platform: "x",
-        accountId: "tech_kazuto",
-        text: "週末イベントの告知\n皆さんご来場お待ちしています！",
-        status: "scheduled",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        scheduledAt: startOfToday + 18 * 60 * 60 * 1000,
-      },
-      {
-        id: "2",
-        platform: "x",
-        accountId: "tech_kazuto",
-        text: "今日の振り返り\n良い一日でした。",
-        status: "scheduled",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        scheduledAt: startOfToday + 21 * 60 * 60 * 1000,
-      },
-      {
-        id: "3",
-        platform: "note",
-        accountId: "kazuto",
-        text: "AI時代の働き方についての記事を公開しました。",
-        status: "scheduled",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        scheduledAt: startOfToday + 24 * 60 * 60 * 1000 + 10 * 60 * 60 * 1000,
-      },
-      {
-        id: "4",
-        platform: "youtube",
-        accountId: "kazuto_dev",
-        text: "新規動画アップロード: 【入門】LitでWebコンポーネントを作ろう",
-        status: "scheduled",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        scheduledAt:
-          startOfToday + 2 * 24 * 60 * 60 * 1000 + 14 * 60 * 60 * 1000,
-      },
-    ];
+    wsClient.removeEventListener("connected", this.handleConnected);
+    wsClient.removeEventListener("disconnected", this.handleDisconnected);
+    wsClient.removeEventListener("post.updated", this.handlePostUpdated);
+  }
 
-    this.contents = mockData.sort((a, b) => a.scheduledAt - b.scheduledAt);
+  private async loadContents(): Promise<void> {
+    this.isLoading = true;
+    this.error = null;
+
+    try {
+      const items = await wsClient.postList("scheduled");
+      this.contents = items
+        .map(approvalItemToContent)
+        .filter((c): c is ScheduledContent => c.scheduledAt !== undefined)
+        .sort((a, b) => a.scheduledAt - b.scheduledAt);
+    } catch (err) {
+      this.error =
+        err instanceof Error ? err.message : "Failed to load scheduled posts";
+    } finally {
+      this.isLoading = false;
+    }
+  }
+
+  private handleRetry(): void {
+    if (!wsClient.isConnected) {
+      wsClient.connect();
+    } else {
+      this.loadContents();
+    }
   }
 
   private getStartOfDay(date: Date): number {
@@ -378,14 +468,16 @@ export class SchedulePageElement extends LitElement {
   }
 
   private getFilteredContents(): ScheduledContent[] {
-    const filters: Record<ViewMode, (scheduledAt: number) => boolean> = {
-      today: (t) => this.isInToday(t),
-      week: (t) => this.isInWeek(t),
-      month: (t) => this.isInMonth(t),
-    };
-
-    const filter = filters[this.viewMode];
-    return this.contents.filter((item) => filter(item.scheduledAt));
+    return this.contents.filter((item) => {
+      switch (this.viewMode) {
+        case "today":
+          return this.isInToday(item.scheduledAt);
+        case "week":
+          return this.isInWeek(item.scheduledAt);
+        case "month":
+          return this.isInMonth(item.scheduledAt);
+      }
+    });
   }
 
   private formatDateString(timestamp: number): string {
@@ -467,10 +559,83 @@ export class SchedulePageElement extends LitElement {
     this.viewMode = mode;
   }
 
-  render() {
+  private renderContent() {
+    if (this.isLoading) {
+      return html`
+        <div class="loading-state">
+          <div class="loading-icon">
+            <svg viewBox="0 0 24 24">${loadingIcon}</svg>
+          </div>
+          <div>Loading scheduled posts...</div>
+        </div>
+      `;
+    }
+
+    if (this.error) {
+      return html`
+        <div class="error-state">
+          <div>${this.error}</div>
+          <button class="retry-btn" @click="${this.handleRetry}">Retry</button>
+        </div>
+      `;
+    }
+
     const filtered = this.getFilteredContents();
     const grouped = this.groupContentsByDate(filtered);
 
+    if (filtered.length === 0) {
+      return html`
+        <div class="empty-state">
+          <div class="empty-state-icon">
+            <svg viewBox="0 0 24 24">${calendarIcon}</svg>
+          </div>
+          <div>予定された投稿はありません</div>
+        </div>
+      `;
+    }
+
+    return Array.from(grouped.entries()).map(
+      ([dateStr, items]) => html`
+        <div class="date-group">
+          <div class="date-header">${dateStr}</div>
+          ${items.map(
+            (item) => html`
+              <div class="schedule-item">
+                <div class="time-col">${this.formatTime(item.scheduledAt)}</div>
+                <div class="content-col">
+                  <div class="item-card">
+                    <div class="item-header">
+                      <indra-platform-badge
+                        .platform="${item.platform as Platform}"
+                      ></indra-platform-badge>
+                      <span class="account-name">@${item.accountId}</span>
+                    </div>
+                    <div class="preview-text">${item.text}</div>
+                    <div class="actions">
+                      <button
+                        class="action-btn"
+                        @click="${() => this.handleEditClick(item)}"
+                      >
+                        編集
+                      </button>
+                      <button
+                        class="action-btn cancel"
+                        @click="${() => this.handleCancelClick(item.id)}"
+                      >
+                        キャンセル
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `,
+          )}
+        </div>
+      `,
+    );
+  }
+
+  render() {
     return html`
       <div class="page-header">
         <span class="page-title">Schedule</span>
@@ -496,61 +661,7 @@ export class SchedulePageElement extends LitElement {
         </div>
       </div>
 
-      <div class="schedule-container">
-        ${filtered.length === 0
-          ? html`
-              <div class="empty-state">
-                <div class="empty-state-icon">
-                  <svg viewBox="0 0 24 24">${calendarIcon}</svg>
-                </div>
-                <div>予定された投稿はありません</div>
-              </div>
-            `
-          : Array.from(grouped.entries()).map(
-              ([dateStr, items]) => html`
-                <div class="date-group">
-                  <div class="date-header">${dateStr}</div>
-                  ${items.map(
-                    (item) => html`
-                      <div class="schedule-item">
-                        <div class="time-col">
-                          ${this.formatTime(item.scheduledAt)}
-                        </div>
-                        <div class="content-col">
-                          <div class="item-card">
-                            <div class="item-header">
-                              <indra-platform-badge
-                                .platform="${item.platform as Platform}"
-                              ></indra-platform-badge>
-                              <span class="account-name"
-                                >@${item.accountId}</span
-                              >
-                            </div>
-                            <div class="preview-text">${item.text}</div>
-                            <div class="actions">
-                              <button
-                                class="action-btn"
-                                @click="${() => this.handleEditClick(item)}"
-                              >
-                                編集
-                              </button>
-                              <button
-                                class="action-btn cancel"
-                                @click="${() =>
-                                  this.handleCancelClick(item.id)}"
-                              >
-                                キャンセル
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    `,
-                  )}
-                </div>
-              `,
-            )}
-      </div>
+      <div class="schedule-container">${this.renderContent()}</div>
 
       <indra-modal
         ?open="${this.isModalOpen}"

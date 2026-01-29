@@ -4,4 +4,5 @@ export * from "./store.js";
 export * from "./source-store.js";
 export * from "./fetcher.js";
 export * from "./x-fetcher.js";
+export * from "./changelog-fetcher.js";
 export * from "./scheduler.js";

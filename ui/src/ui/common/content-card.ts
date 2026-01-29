@@ -133,6 +133,44 @@ export class ContentCardElement extends LitElement {
       background: #dc3545;
       color: white;
     }
+
+    .dropdown {
+      position: relative;
+      display: inline-block;
+    }
+
+    .dropdown-menu {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background: white;
+      border: 1px solid var(--border, #e0e0e0);
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      z-index: 10;
+      min-width: 140px;
+    }
+
+    .dropdown:hover .dropdown-menu {
+      display: block;
+    }
+
+    .dropdown-item {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      border: none;
+      background: none;
+      text-align: left;
+      cursor: pointer;
+      font-size: 12px;
+      font-family: var(--font-family, "Geist Mono", monospace);
+    }
+
+    .dropdown-item:hover {
+      background: var(--bg-tertiary, #f5f5f5);
+    }
   `;
 
   @property({ type: Object })
@@ -179,12 +217,23 @@ export class ContentCardElement extends LitElement {
       <button class="action-btn" @click="${() => this.emitAction("edit")}">
         Edit
       </button>
-      <button
-        class="action-btn primary"
-        @click="${() => this.emitAction("approve")}"
-      >
-        Approve
-      </button>
+      <div class="dropdown">
+        <button class="action-btn primary dropdown-trigger">Approve ▼</button>
+        <div class="dropdown-menu">
+          <button
+            class="dropdown-item"
+            @click="${() => this.emitAction("approve")}"
+          >
+            今すぐ投稿
+          </button>
+          <button
+            class="dropdown-item"
+            @click="${() => this.emitAction("schedule")}"
+          >
+            予約投稿
+          </button>
+        </div>
+      </div>
       <button
         class="action-btn danger"
         @click="${() => this.emitAction("reject")}"

@@ -19,6 +19,7 @@ import {
   handlePostReject,
   handlePostEdit,
   handlePostAdd,
+  handlePostSchedule,
 } from "./post.js";
 import {
   handleAuthXStart,
@@ -47,6 +48,14 @@ import {
   handleSessionsUpdateTitle,
   handleChatHistory,
 } from "./session.js";
+import {
+  handleMemorySearch,
+  handleMemoryGet,
+  handleMemoryWrite,
+  handleMemoryStats,
+  handleMemoryIndex,
+  handleMemoryDelete,
+} from "./memory.js";
 import type { GatewayContext, RequestHandler } from "./context.js";
 
 export type { GatewayContext, RequestHandler } from "./context.js";
@@ -122,6 +131,15 @@ export function createHandlerRegistry(
     getErrorMessage: ctx.getErrorMessage,
   };
 
+  const memoryCtx = ctx.services.memory
+    ? {
+        memory: ctx.services.memory,
+        sendSuccess: ctx.sendSuccess,
+        sendError: ctx.sendError,
+        getErrorMessage: ctx.getErrorMessage,
+      }
+    : null;
+
   return new Map<string, RequestHandler>([
     [
       "ping",
@@ -158,6 +176,7 @@ export function createHandlerRegistry(
     ["post.reject", (ws, frame) => handlePostReject(postCtx, ws, frame)],
     ["post.edit", (ws, frame) => handlePostEdit(postCtx, ws, frame)],
     ["post.add", (ws, frame) => handlePostAdd(postCtx, ws, frame)],
+    ["post.schedule", (ws, frame) => handlePostSchedule(postCtx, ws, frame)],
     ["auth.x.start", (ws, frame) => handleAuthXStart(authCtx, ws, frame)],
     ["auth.x.callback", (ws, frame) => handleAuthXCallback(authCtx, ws, frame)],
     ["auth.x.status", (ws, frame) => handleAuthXStatus(authCtx, ws, frame)],
@@ -247,5 +266,31 @@ export function createHandlerRegistry(
       (ws, frame) => handleSessionsUpdateTitle(sessionCtx, ws, frame),
     ],
     ["chat.history", (ws, frame) => handleChatHistory(sessionCtx, ws, frame)],
+    // Memory handlers (if available)
+    ...(memoryCtx
+      ? ([
+          [
+            "memory.search",
+            (ws, frame) => handleMemorySearch(memoryCtx, ws, frame),
+          ],
+          ["memory.get", (ws, frame) => handleMemoryGet(memoryCtx, ws, frame)],
+          [
+            "memory.write",
+            (ws, frame) => handleMemoryWrite(memoryCtx, ws, frame),
+          ],
+          [
+            "memory.stats",
+            (ws, frame) => handleMemoryStats(memoryCtx, ws, frame),
+          ],
+          [
+            "memory.index",
+            (ws, frame) => handleMemoryIndex(memoryCtx, ws, frame),
+          ],
+          [
+            "memory.delete",
+            (ws, frame) => handleMemoryDelete(memoryCtx, ws, frame),
+          ],
+        ] as [string, RequestHandler][])
+      : []),
   ]);
 }

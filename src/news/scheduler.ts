@@ -1,29 +1,20 @@
 import cron from "node-cron";
 
+import { fetchGitHubChangelog } from "./changelog-fetcher.js";
 import { fetchAnthropicNews, filterLast24Hours } from "./fetcher.js";
 import { NewsStore } from "./store.js";
 import type { NewsArticle } from "./types.js";
 
-/**
- * ニュース自動更新スケジューラー
- */
 export class NewsScheduler {
   private task: cron.ScheduledTask | null = null;
   private store: NewsStore;
   private onUpdate: (articles: NewsArticle[]) => void;
 
-  /**
-   * @param store ニュース記事を保存するストア
-   * @param onUpdate 記事更新時のコールバック
-   */
   constructor(store: NewsStore, onUpdate: (articles: NewsArticle[]) => void) {
     this.store = store;
     this.onUpdate = onUpdate;
   }
 
-  /**
-   * スケジューラーを開始（毎朝6時に実行）
-   */
   start(): void {
     if (this.task !== null) {
       console.warn("NewsScheduler: Already started");
@@ -39,9 +30,6 @@ export class NewsScheduler {
     console.log("NewsScheduler: Started (scheduled for 06:00 every day)");
   }
 
-  /**
-   * スケジューラーを停止
-   */
   stop(): void {
     if (this.task === null) {
       console.warn("NewsScheduler: Not running");
@@ -54,27 +42,38 @@ export class NewsScheduler {
     console.log("NewsScheduler: Stopped");
   }
 
-  /**
-   * ニュース更新を手動実行
-   */
   async run(): Promise<void> {
     try {
       console.log("NewsScheduler: Running news fetch...");
 
-      // Anthropic Newsを取得（コマンドで要約も含めて取得）
       const articles = await fetchAnthropicNews();
-
-      // 過去24時間のみをフィルタ
       const filtered = filterLast24Hours(articles);
 
-      // ストアに保存
-      await this.store.save(filtered);
+      let changelogArticles: NewsArticle[] = [];
+      try {
+        const allChangelogArticles = await fetchGitHubChangelog({
+          owner: "anthropics",
+          repo: "claude-code",
+        });
+        changelogArticles = allChangelogArticles.filter(
+          (article) => !this.store.hasHash(article.contentHash!),
+        );
+        console.log(
+          `NewsScheduler: Found ${changelogArticles.length} new changelog entries`,
+        );
+      } catch (changelogError) {
+        console.error(
+          "NewsScheduler: Error fetching changelog:",
+          changelogError,
+        );
+      }
 
-      // 更新を通知
-      this.onUpdate(filtered);
+      const allArticles = [...filtered, ...changelogArticles];
+      await this.store.save(allArticles);
+      this.onUpdate(allArticles);
 
       console.log(
-        `NewsScheduler: Fetched and saved ${filtered.length} articles`,
+        `NewsScheduler: Fetched and saved ${allArticles.length} articles (${filtered.length} news, ${changelogArticles.length} changelog)`,
       );
     } catch (error) {
       console.error("NewsScheduler: Error during run:", error);

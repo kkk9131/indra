@@ -198,7 +198,6 @@ export class NewsPageElement extends LitElement {
     const event = e as CustomEvent<{ articles: NewsArticle[] }>;
     if (event.detail?.articles) {
       this.articles = event.detail.articles;
-      // news.updatedイベントで更新中状態を解除
       this.refreshing = false;
     }
   }
@@ -240,10 +239,7 @@ export class NewsPageElement extends LitElement {
     this.error = null;
 
     try {
-      // 即座に「開始しました」が返る（実際の更新はバックグラウンドで実行）
-      // 更新完了時にnews.updatedイベントで通知される
       await wsClient.newsRefresh();
-      // refreshing状態はnews.updatedイベントで解除される
     } catch (err) {
       this.error =
         err instanceof Error ? err.message : "Failed to refresh news";
@@ -338,6 +334,12 @@ export class NewsPageElement extends LitElement {
           @click="${() => this.handleTabClick("log-analysis")}"
         >
           Reports
+        </button>
+        <button
+          class="tab ${this.filter === "github-changelog" ? "active" : ""}"
+          @click="${() => this.handleTabClick("github-changelog")}"
+        >
+          Changelog
         </button>
       </div>
 

@@ -12,6 +12,7 @@ const STATUS_COLORS: Record<ApprovalStatus, (s: string) => string> = {
   approved: chalk.blue,
   rejected: chalk.red,
   posted: chalk.green,
+  scheduled: chalk.magenta,
 };
 
 function formatItem(item: ApprovalItem): string {

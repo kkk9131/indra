@@ -20,20 +20,28 @@ const ALL_STATUSES: readonly ApprovalStatus[] = [
   "approved",
   "rejected",
   "posted",
+  "scheduled",
 ];
 
 type ItemUpdates = Partial<
-  Pick<ApprovalItem, "content" | "status" | "postId" | "postUrl" | "error">
+  Pick<
+    ApprovalItem,
+    "content" | "status" | "postId" | "postUrl" | "error" | "scheduledAt"
+  >
 >;
 
 export class ApprovalQueue {
-  private readonly dirs: Record<"pending" | "approved" | "history", string>;
+  private readonly dirs: Record<
+    "pending" | "approved" | "scheduled" | "history",
+    string
+  >;
 
   constructor(baseDir?: string) {
     const base = baseDir ?? join(homedir(), ".indra", "approval");
     this.dirs = {
       pending: join(base, "pending"),
       approved: join(base, "approved"),
+      scheduled: join(base, "scheduled"),
       history: join(base, "history"),
     };
     this.ensureDirectories();
@@ -48,9 +56,16 @@ export class ApprovalQueue {
   }
 
   private getStatusDir(status: ApprovalStatus): string {
-    if (status === "pending") return this.dirs.pending;
-    if (status === "approved") return this.dirs.approved;
-    return this.dirs.history;
+    switch (status) {
+      case "pending":
+        return this.dirs.pending;
+      case "approved":
+        return this.dirs.approved;
+      case "scheduled":
+        return this.dirs.scheduled;
+      default:
+        return this.dirs.history;
+    }
   }
 
   private getFilePath(id: string, status: ApprovalStatus): string {
@@ -159,6 +174,18 @@ export class ApprovalQueue {
 
   markFailed(id: string, error: string): ApprovalItem | null {
     return this.update(id, { error });
+  }
+
+  schedule(id: string, scheduledAt: string): ApprovalItem | null {
+    return this.update(id, { status: "scheduled", scheduledAt });
+  }
+
+  listScheduledDue(): ApprovalItem[] {
+    const now = new Date();
+    return this.list("scheduled").filter((item) => {
+      if (!item.scheduledAt) return false;
+      return new Date(item.scheduledAt) <= now;
+    });
   }
 
   delete(id: string): boolean {

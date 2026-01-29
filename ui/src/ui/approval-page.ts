@@ -5,6 +5,7 @@ import { approvalItemToContent } from "./types.js";
 import { wsClient } from "../services/ws-client.js";
 import "./common/content-card.js";
 import "./common/modal.js";
+import "./common/schedule-modal.js";
 
 // Lucide icon - Check Circle
 const checkCircleIcon = svg`<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>`;
@@ -229,6 +230,9 @@ export class ApprovalPageElement extends LitElement {
   @state()
   private previewContent: Content | null = null;
 
+  @state()
+  private scheduleTarget: Content | null = null;
+
   private handleConnected = () => {
     this.wsConnected = true;
     this.loadContents();
@@ -324,18 +328,20 @@ export class ApprovalPageElement extends LitElement {
       content: Content;
     };
 
-    if (action === "approve") {
-      await this.approveContent(content.id);
-      return;
-    }
-
-    if (action === "reject") {
-      await this.rejectContent(content.id);
-      return;
-    }
-
-    if (action === "preview" || action === "edit") {
-      this.previewContent = content;
+    switch (action) {
+      case "approve":
+        await this.approveContent(content.id);
+        break;
+      case "reject":
+        await this.rejectContent(content.id);
+        break;
+      case "schedule":
+        this.scheduleTarget = content;
+        break;
+      case "preview":
+      case "edit":
+        this.previewContent = content;
+        break;
     }
   }
 
@@ -368,6 +374,30 @@ export class ApprovalPageElement extends LitElement {
     this.previewContent = null;
   }
 
+  private closeScheduleModal(): void {
+    this.scheduleTarget = null;
+  }
+
+  private async handleScheduleConfirm(e: CustomEvent): Promise<void> {
+    if (!this.scheduleTarget) return;
+
+    const { scheduledAt } = e.detail as { scheduledAt: string };
+
+    try {
+      const item = await wsClient.postSchedule(
+        this.scheduleTarget.id,
+        scheduledAt,
+      );
+      const updatedContent = approvalItemToContent(item);
+      this.contents = this.contents.map((c) =>
+        c.id === this.scheduleTarget!.id ? updatedContent : c,
+      );
+      this.scheduleTarget = null;
+    } catch (err) {
+      console.error("Failed to schedule:", err);
+    }
+  }
+
   private handleRetry(): void {
     if (!wsClient.isConnected) {
       wsClient.connect();
@@ -383,11 +413,11 @@ export class ApprovalPageElement extends LitElement {
         <div class="controls">
           <div class="connection-status">
             <span
-              class="status-dot ${this.isConnected
+              class="status-dot ${this.wsConnected
                 ? "connected"
                 : "disconnected"}"
             ></span>
-            ${this.isConnected ? "Connected" : "Disconnected"}
+            ${this.wsConnected ? "Connected" : "Disconnected"}
           </div>
 
           <select
@@ -432,6 +462,12 @@ export class ApprovalPageElement extends LitElement {
           <button class="close-btn" @click="${this.closeModal}">Close</button>
         </div>
       </indra-modal>
+
+      <indra-schedule-modal
+        ?open="${this.scheduleTarget !== null}"
+        @schedule="${this.handleScheduleConfirm}"
+        @close="${this.closeScheduleModal}"
+      ></indra-schedule-modal>
     `;
   }
 

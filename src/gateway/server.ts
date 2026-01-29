@@ -43,9 +43,16 @@ import {
   ScheduleStore,
   TaskRegistry,
   TaskExecutor,
+  PostScheduler,
   type TaskExecutionResult,
 } from "../scheduler/index.js";
 import { XPostWorkflowService } from "../xpost/index.js";
+import {
+  MemoryStore,
+  MemorySearch,
+  MemoryIndexer,
+  createEmbeddingProvider,
+} from "../memory/index.js";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -140,6 +147,10 @@ export class GatewayServer {
   private taskRegistry: TaskRegistry;
   private taskExecutor: TaskExecutor;
   private xpostWorkflowService: XPostWorkflowService;
+  private postScheduler: PostScheduler;
+  private memoryStore: MemoryStore | null = null;
+  private memorySearch: MemorySearch | null = null;
+  private memoryIndexer: MemoryIndexer | null = null;
   private services: GatewayServices;
   private requestHandlers: Map<string, RequestHandler>;
   private port: number;
@@ -161,6 +172,12 @@ export class GatewayServer {
     this.newsScheduler = new NewsScheduler(this.newsStore, (articles) => {
       this.broadcast("news.updated", { articles });
     });
+
+    this.postScheduler = new PostScheduler(
+      this.approvalQueue,
+      this.credentialStore,
+      (item) => this.broadcast("post.updated", { item }),
+    );
 
     this.logStore = new LogStore();
     this.logCollector = new LogCollector({
@@ -185,6 +202,7 @@ export class GatewayServer {
 
     this.xpostWorkflowService = new XPostWorkflowService();
 
+    this.initMemory();
     this.setupRoutes();
     this.setupWebSocket();
     this.initConnectors();
@@ -209,11 +227,34 @@ export class GatewayServer {
       xpostWorkflowService: this.xpostWorkflowService,
       sessionManager: this.sessionManager,
       transcriptManager: this.transcriptManager,
+      memoryStore: this.memoryStore,
+      memorySearch: this.memorySearch,
+      memoryIndexer: this.memoryIndexer,
       createLLMProvider: (config) => this.createLLMProvider(config),
       saveAgentLog: (action, params) => this.saveAgentLog(action, params),
       broadcast: (event, payload) => this.broadcast(event, payload),
     });
     this.requestHandlers = createHandlerRegistry(this.buildHandlerContext());
+  }
+
+  private initMemory(): void {
+    try {
+      this.memoryStore = new MemoryStore();
+      const embeddingProvider = createEmbeddingProvider();
+      this.memorySearch = new MemorySearch(this.memoryStore, embeddingProvider);
+      this.memoryIndexer = new MemoryIndexer(
+        this.memoryStore,
+        embeddingProvider,
+      );
+      console.log(
+        `MemoryStore: Initialized (vector: ${this.memoryStore.isVectorEnabled()})`,
+      );
+    } catch (error) {
+      console.error("Failed to initialize memory:", error);
+      this.memoryStore = null;
+      this.memorySearch = null;
+      this.memoryIndexer = null;
+    }
   }
 
   private initAnalytics(): void {
@@ -513,6 +554,10 @@ export class GatewayServer {
       this.httpServer.listen(this.port, () => {
         console.log(`Gateway server running on http://localhost:${this.port}`);
         console.log(`WebSocket server running on ws://localhost:${this.port}`);
+
+        // 予約投稿スケジューラーを開始
+        this.postScheduler.start();
+
         resolve();
       });
     });
@@ -547,9 +592,11 @@ export class GatewayServer {
   }
 
   stop(): void {
+    this.postScheduler.stop();
     this.schedulerManager.stop();
     this.scheduleStore.close();
     this.newsSourceStore.close();
+    this.memoryStore?.close();
     this.wss.close();
     this.httpServer.close();
     this.sessionManager.close();

@@ -13,6 +13,10 @@ export type PostApproveResult =
   | { ok: true; item: ApprovalItem }
   | { ok: false; code: string; message: string; item?: ApprovalItem | null };
 
+export type PostScheduleResult =
+  | { ok: true; item: ApprovalItem }
+  | { ok: false; code: string; message: string };
+
 export interface PostService {
   createDraft: (platform: Platform, prompt: string) => Promise<ApprovalItem>;
   addToQueue: (
@@ -24,6 +28,7 @@ export interface PostService {
   approve: (id: string) => Promise<PostApproveResult>;
   reject: (id: string) => ApprovalItem | null;
   edit: (id: string, content: Content) => ApprovalItem | null;
+  schedule: (id: string, scheduledAt: string) => PostScheduleResult;
 }
 
 interface PostServiceDeps {
@@ -143,6 +148,27 @@ Keep it under 280 characters. Be creative and natural. Output ONLY the post text
     },
     edit(id, content) {
       return deps.approvalQueue.update(id, { content });
+    },
+    schedule(id, scheduledAt) {
+      const scheduledDate = new Date(scheduledAt);
+      if (scheduledDate <= new Date()) {
+        return {
+          ok: false,
+          code: "INVALID_SCHEDULE_TIME",
+          message: "Schedule time must be in the future",
+        };
+      }
+
+      const item = deps.approvalQueue.schedule(id, scheduledAt);
+      if (!item) {
+        return {
+          ok: false,
+          code: "NOT_FOUND",
+          message: `Item not found: ${id}`,
+        };
+      }
+
+      return { ok: true, item };
     },
   };
 }

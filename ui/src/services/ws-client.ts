@@ -11,13 +11,14 @@ export interface ApprovalItem {
   id: string;
   platform: string;
   content: { text: string };
-  status: "pending" | "approved" | "rejected" | "posted";
+  status: "pending" | "approved" | "rejected" | "posted" | "scheduled";
   createdAt: string;
   updatedAt: string;
   prompt?: string;
   postId?: string;
   postUrl?: string;
   error?: string;
+  scheduledAt?: string;
 }
 
 export interface WSClientOptions {
@@ -44,10 +45,14 @@ interface EventFrame {
 
 type EventHandler = (payload: unknown, frame: EventFrame) => void;
 
-/** News article type matching backend schema */
 export interface NewsArticle {
   id: string;
-  source: "claude-code" | "blog" | "log-analysis";
+  source:
+    | "claude-code"
+    | "blog"
+    | "log-analysis"
+    | "x-account"
+    | "github-changelog";
   title: string;
   summary: string | null;
   url: string;
@@ -361,6 +366,14 @@ export class WSClientService extends EventTarget {
     });
     if (!res.ok) {
       throw new Error(res.error?.message ?? "Failed to add post");
+    }
+    return (res.payload as { item: ApprovalItem }).item;
+  }
+
+  async postSchedule(id: string, scheduledAt: string): Promise<ApprovalItem> {
+    const res = await this.sendRequest("post.schedule", { id, scheduledAt });
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to schedule post");
     }
     return (res.payload as { item: ApprovalItem }).item;
   }

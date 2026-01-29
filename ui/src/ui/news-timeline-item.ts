@@ -83,6 +83,11 @@ export class NewsTimelineItemElement extends LitElement {
       color: #2980b9;
     }
 
+    .badge.github-changelog {
+      background: rgba(100, 100, 100, 0.1);
+      color: #555;
+    }
+
     .title {
       font-size: 16px;
       font-weight: 600;
@@ -253,6 +258,8 @@ export class NewsTimelineItemElement extends LitElement {
         return "claude-code";
       case "log-analysis":
         return "log-analysis";
+      case "github-changelog":
+        return "github-changelog";
       default:
         return "blog";
     }
@@ -264,6 +271,8 @@ export class NewsTimelineItemElement extends LitElement {
         return "Claude Code";
       case "log-analysis":
         return "Report";
+      case "github-changelog":
+        return "Changelog";
       default:
         return "Blog";
     }
@@ -303,7 +312,9 @@ export class NewsTimelineItemElement extends LitElement {
         ${this.expanded
           ? html`
               <div class="content">
-                <div class="content-text">${this.article.summary || ""}</div>
+                <div class="content-text">
+                  ${this.article.body || this.article.summary || ""}
+                </div>
                 <div class="actions">
                   <a
                     class="view-original"

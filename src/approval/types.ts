@@ -6,6 +6,7 @@ export const ApprovalStatusSchema = z.enum([
   "approved",
   "rejected",
   "posted",
+  "scheduled",
 ]);
 export type ApprovalStatus = z.infer<typeof ApprovalStatusSchema>;
 
@@ -21,6 +22,7 @@ export const ApprovalItemSchema = z.object({
   postUrl: z.string().optional(),
   error: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
+  scheduledAt: z.string().datetime().optional(),
 });
 export type ApprovalItem = z.infer<typeof ApprovalItemSchema>;
 

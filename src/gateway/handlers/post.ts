@@ -12,6 +12,10 @@ export interface PostHandlerContext {
   sendError: (ws: WebSocket, id: string, code: string, message: string) => void;
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
 export async function handlePostCreate(
   ctx: PostHandlerContext,
   ws: WebSocket,
@@ -25,12 +29,9 @@ export async function handlePostCreate(
     const item = await ctx.post.createDraft(platform, prompt);
 
     ctx.sendSuccess(ws, frame.id, { item });
-
-    // Broadcast to all clients
     ctx.broadcast("post.created", { item });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    ctx.sendError(ws, frame.id, "POST_CREATE_ERROR", message);
+    ctx.sendError(ws, frame.id, "POST_CREATE_ERROR", getErrorMessage(error));
   }
 }
 
@@ -114,4 +115,25 @@ export function handlePostAdd(
   const item = ctx.post.addToQueue(platform, content, metadata);
   ctx.sendSuccess(ws, frame.id, { item });
   ctx.broadcast("post.created", { item });
+}
+
+export function handlePostSchedule(
+  ctx: PostHandlerContext,
+  ws: WebSocket,
+  frame: RequestFrame,
+): void {
+  const { id, scheduledAt } = frame.params as {
+    id: string;
+    scheduledAt: string;
+  };
+
+  const result = ctx.post.schedule(id, scheduledAt);
+
+  if (result.ok) {
+    ctx.sendSuccess(ws, frame.id, { item: result.item });
+    ctx.broadcast("post.updated", { item: result.item });
+    return;
+  }
+
+  ctx.sendError(ws, frame.id, result.code, result.message);
 }

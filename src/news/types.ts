@@ -1,7 +1,12 @@
 import { z } from "zod";
 
-export type NewsSource = "claude-code" | "blog" | "log-analysis" | "x-account";
-export type NewsSourceType = "x-account" | "rss" | "web";
+export type NewsSource =
+  | "claude-code"
+  | "blog"
+  | "log-analysis"
+  | "x-account"
+  | "github-changelog";
+export type NewsSourceType = "x-account" | "rss" | "web" | "github";
 
 export interface XAccountConfig {
   handle: string;
@@ -9,6 +14,13 @@ export interface XAccountConfig {
   hoursBack?: number;
   includeRetweets?: boolean;
   includeReplies?: boolean;
+}
+
+export interface GitHubChangelogConfig {
+  owner: string;
+  repo: string;
+  branch?: string;
+  filePath?: string;
 }
 
 export interface NewsSourceDefinition {
@@ -30,10 +42,17 @@ export const XAccountConfigSchema = z.object({
   includeReplies: z.boolean().optional(),
 });
 
+export const GitHubChangelogConfigSchema = z.object({
+  owner: z.string(),
+  repo: z.string(),
+  branch: z.string().optional(),
+  filePath: z.string().optional(),
+});
+
 export const NewsSourceDefinitionSchema = z.object({
   id: z.string(),
   name: z.string(),
-  sourceType: z.enum(["x-account", "rss", "web"]),
+  sourceType: z.enum(["x-account", "rss", "web", "github"]),
   sourceConfig: z.union([XAccountConfigSchema, z.record(z.unknown())]),
   enabled: z.boolean(),
   lastFetchedAt: z.string().optional(),
@@ -56,7 +75,13 @@ export interface NewsArticle {
 
 export const NewsArticleSchema = z.object({
   id: z.string(),
-  source: z.enum(["claude-code", "blog", "log-analysis", "x-account"]),
+  source: z.enum([
+    "claude-code",
+    "blog",
+    "log-analysis",
+    "x-account",
+    "github-changelog",
+  ]),
   title: z.string(),
   summary: z.string().nullable(),
   url: z.string(),

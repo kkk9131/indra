@@ -36,7 +36,13 @@ import {
   type DiscordIntegrationService,
 } from "./discord.js";
 import { createSessionService, type SessionService } from "./session.js";
+import { createMemoryService, type MemoryService } from "./memory.js";
 import type { SessionManager, TranscriptManager } from "../../infra/index.js";
+import type {
+  MemoryStore,
+  MemorySearch,
+  MemoryIndexer,
+} from "../../memory/index.js";
 
 export type { AgentLogParams } from "./chat.js";
 export type { PostApproveResult } from "./post.js";
@@ -44,6 +50,7 @@ export type { AuthStartResult, AuthCallbackResult } from "./auth.js";
 export type { AnalyticsRunResult } from "./analytics.js";
 export type { NewsSourceFetchResult } from "./news-source.js";
 export type { XpostGenerateResult } from "./xpost.js";
+export type { MemoryService } from "./memory.js";
 
 export interface GatewayServices {
   config: ConfigService;
@@ -58,6 +65,7 @@ export interface GatewayServices {
   xpost: XpostService;
   discordIntegration: DiscordIntegrationService;
   session: SessionService;
+  memory: MemoryService;
 }
 
 interface GatewayServiceDeps {
@@ -77,6 +85,9 @@ interface GatewayServiceDeps {
   xpostWorkflowService: XPostWorkflowService;
   sessionManager: SessionManager;
   transcriptManager: TranscriptManager;
+  memoryStore: MemoryStore | null;
+  memorySearch: MemorySearch | null;
+  memoryIndexer: MemoryIndexer | null;
   createLLMProvider: (config: Config["llm"]) => LLMProvider;
   saveAgentLog: (action: AgentActionType, params: AgentLogParams) => void;
   broadcast: (event: string, payload: unknown) => void;
@@ -131,6 +142,15 @@ export function createGatewayServices(
     transcriptManager: deps.transcriptManager,
   });
 
+  const memory =
+    deps.memoryStore && deps.memorySearch && deps.memoryIndexer
+      ? createMemoryService({
+          store: deps.memoryStore,
+          search: deps.memorySearch,
+          indexer: deps.memoryIndexer,
+        })
+      : null;
+
   return {
     config,
     chat,
@@ -143,6 +163,7 @@ export function createGatewayServices(
     schedule,
     xpost,
     session,
+    memory: memory!,
     discordIntegration: createDiscordIntegrationService({
       chat,
       post,
