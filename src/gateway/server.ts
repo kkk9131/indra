@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 import { createServer, type Server } from "http";
-import { SessionManager } from "../infra/index.js";
+import { SessionManager, TranscriptManager } from "../infra/index.js";
 import { ConfigManager, type Config } from "../config/index.js";
 import { AgentSDKProvider, type LLMProvider } from "../llm/index.js";
 import {
@@ -122,6 +122,7 @@ export class GatewayServer {
   private httpServer: Server;
   private wss: WebSocketServer;
   private sessionManager: SessionManager;
+  private transcriptManager: TranscriptManager;
   private configManager: ConfigManager;
   private approvalQueue: ApprovalQueue;
   private xConnector: XConnector | null = null;
@@ -150,6 +151,7 @@ export class GatewayServer {
     this.httpServer = createServer();
     this.wss = new WebSocketServer({ server: this.httpServer });
     this.sessionManager = new SessionManager();
+    this.transcriptManager = new TranscriptManager();
     this.configManager = new ConfigManager();
     this.approvalQueue = new ApprovalQueue();
     this.credentialStore = getCredentialStore();
@@ -205,6 +207,8 @@ export class GatewayServer {
       analyticsScheduler: this.analyticsScheduler,
       schedulerManager: this.schedulerManager,
       xpostWorkflowService: this.xpostWorkflowService,
+      sessionManager: this.sessionManager,
+      transcriptManager: this.transcriptManager,
       createLLMProvider: (config) => this.createLLMProvider(config),
       saveAgentLog: (action, params) => this.saveAgentLog(action, params),
       broadcast: (event, payload) => this.broadcast(event, payload),

@@ -20,6 +20,7 @@ export const ApprovalItemSchema = z.object({
   postId: z.string().optional(),
   postUrl: z.string().optional(),
   error: z.string().optional(),
+  metadata: z.record(z.unknown()).optional(),
 });
 export type ApprovalItem = z.infer<typeof ApprovalItemSchema>;
 
@@ -27,5 +28,6 @@ export const CreateApprovalItemSchema = z.object({
   platform: PlatformSchema,
   content: ContentSchema,
   prompt: z.string().optional(),
+  metadata: z.record(z.unknown()).optional(),
 });
 export type CreateApprovalItem = z.infer<typeof CreateApprovalItemSchema>;

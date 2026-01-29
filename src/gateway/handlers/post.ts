@@ -100,3 +100,18 @@ export function handlePostEdit(
   ctx.sendSuccess(ws, frame.id, { item });
   ctx.broadcast("post.updated", { item });
 }
+
+export function handlePostAdd(
+  ctx: PostHandlerContext,
+  ws: WebSocket,
+  frame: RequestFrame,
+): void {
+  const { platform, content, metadata } = frame.params as {
+    platform: Platform;
+    content: Content;
+    metadata?: Record<string, unknown>;
+  };
+  const item = ctx.post.addToQueue(platform, content, metadata);
+  ctx.sendSuccess(ws, frame.id, { item });
+  ctx.broadcast("post.created", { item });
+}

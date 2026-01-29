@@ -93,6 +93,7 @@ export class ApprovalQueue {
       createdAt: now,
       updatedAt: now,
       prompt: input.prompt,
+      metadata: input.metadata,
     };
     this.writeItem(item);
     return item;

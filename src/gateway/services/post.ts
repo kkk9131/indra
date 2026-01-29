@@ -15,6 +15,11 @@ export type PostApproveResult =
 
 export interface PostService {
   createDraft: (platform: Platform, prompt: string) => Promise<ApprovalItem>;
+  addToQueue: (
+    platform: Platform,
+    content: Content,
+    metadata?: Record<string, unknown>,
+  ) => ApprovalItem;
   list: (status?: ApprovalStatus) => ApprovalItem[];
   approve: (id: string) => Promise<PostApproveResult>;
   reject: (id: string) => ApprovalItem | null;
@@ -31,6 +36,13 @@ interface PostServiceDeps {
 
 export function createPostService(deps: PostServiceDeps): PostService {
   return {
+    addToQueue(platform, content, metadata) {
+      return deps.approvalQueue.create({
+        platform,
+        content,
+        metadata,
+      });
+    },
     async createDraft(platform, prompt) {
       const provider = deps.createLLMProvider(deps.configManager.get().llm);
       const systemPrompt = `You are a social media content creator. Generate a concise, engaging post for ${platform}.

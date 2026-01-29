@@ -470,8 +470,15 @@ export class XPostModalElement extends LitElement {
     this.approving = true;
 
     try {
-      // Create post in approval queue
-      await wsClient.postCreate("x", selectedPost.text);
+      // Add post directly to approval queue (without LLM regeneration)
+      await wsClient.postAdd(
+        "x",
+        { text: selectedPost.text },
+        {
+          evaluation: selectedPost.evaluation,
+          templateUsed: selectedPost.templateUsed,
+        },
+      );
       this.dispatchEvent(
         new CustomEvent("approved", {
           detail: { post: selectedPost },

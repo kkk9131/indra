@@ -349,6 +349,22 @@ export class WSClientService extends EventTarget {
     return (res.payload as { item: ApprovalItem }).item;
   }
 
+  async postAdd(
+    platform: string,
+    content: { text: string },
+    metadata?: Record<string, unknown>,
+  ): Promise<ApprovalItem> {
+    const res = await this.sendRequest("post.add", {
+      platform,
+      content,
+      metadata,
+    });
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to add post");
+    }
+    return (res.payload as { item: ApprovalItem }).item;
+  }
+
   // ===== Auth API Methods =====
 
   async authXStart(): Promise<{ url: string; state: string }> {

@@ -12,7 +12,7 @@ export const ConnectorStatusSchema = z.enum([
 export type ConnectorStatus = z.infer<typeof ConnectorStatusSchema>;
 
 export const ContentSchema = z.object({
-  text: z.string().max(280),
+  text: z.string().max(25000), // X premium: 25000, note: longer
   mediaUrls: z.array(z.string()).optional(),
 });
 export type Content = z.infer<typeof ContentSchema>;

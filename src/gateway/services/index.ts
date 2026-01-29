@@ -35,6 +35,8 @@ import {
   createDiscordIntegrationService,
   type DiscordIntegrationService,
 } from "./discord.js";
+import { createSessionService, type SessionService } from "./session.js";
+import type { SessionManager, TranscriptManager } from "../../infra/index.js";
 
 export type { AgentLogParams } from "./chat.js";
 export type { PostApproveResult } from "./post.js";
@@ -55,6 +57,7 @@ export interface GatewayServices {
   schedule: ScheduleService;
   xpost: XpostService;
   discordIntegration: DiscordIntegrationService;
+  session: SessionService;
 }
 
 interface GatewayServiceDeps {
@@ -72,6 +75,8 @@ interface GatewayServiceDeps {
   analyticsScheduler: AnalyticsScheduler | null;
   schedulerManager: SchedulerManager;
   xpostWorkflowService: XPostWorkflowService;
+  sessionManager: SessionManager;
+  transcriptManager: TranscriptManager;
   createLLMProvider: (config: Config["llm"]) => LLMProvider;
   saveAgentLog: (action: AgentActionType, params: AgentLogParams) => void;
   broadcast: (event: string, payload: unknown) => void;
@@ -121,6 +126,10 @@ export function createGatewayServices(
     newsStore: deps.newsStore,
     xpostWorkflowService: deps.xpostWorkflowService,
   });
+  const session = createSessionService({
+    sessionManager: deps.sessionManager,
+    transcriptManager: deps.transcriptManager,
+  });
 
   return {
     config,
@@ -133,6 +142,7 @@ export function createGatewayServices(
     analytics,
     schedule,
     xpost,
+    session,
     discordIntegration: createDiscordIntegrationService({
       chat,
       post,

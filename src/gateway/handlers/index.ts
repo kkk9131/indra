@@ -18,6 +18,7 @@ import {
   handlePostApprove,
   handlePostReject,
   handlePostEdit,
+  handlePostAdd,
 } from "./post.js";
 import {
   handleAuthXStart,
@@ -38,6 +39,14 @@ import {
   handleNewsSourceFetchNow,
 } from "./news-source.js";
 import { handleXpostGenerate } from "./xpost.js";
+import {
+  handleSessionsList,
+  handleSessionsGet,
+  handleSessionsCreate,
+  handleSessionsDelete,
+  handleSessionsUpdateTitle,
+  handleChatHistory,
+} from "./session.js";
 import type { GatewayContext, RequestHandler } from "./context.js";
 
 export type { GatewayContext, RequestHandler } from "./context.js";
@@ -106,6 +115,13 @@ export function createHandlerRegistry(
     getErrorMessage: ctx.getErrorMessage,
   };
 
+  const sessionCtx = {
+    session: ctx.services.session,
+    sendSuccess: ctx.sendSuccess,
+    sendError: ctx.sendError,
+    getErrorMessage: ctx.getErrorMessage,
+  };
+
   return new Map<string, RequestHandler>([
     [
       "ping",
@@ -141,6 +157,7 @@ export function createHandlerRegistry(
     ["post.approve", (ws, frame) => handlePostApprove(postCtx, ws, frame)],
     ["post.reject", (ws, frame) => handlePostReject(postCtx, ws, frame)],
     ["post.edit", (ws, frame) => handlePostEdit(postCtx, ws, frame)],
+    ["post.add", (ws, frame) => handlePostAdd(postCtx, ws, frame)],
     ["auth.x.start", (ws, frame) => handleAuthXStart(authCtx, ws, frame)],
     ["auth.x.callback", (ws, frame) => handleAuthXCallback(authCtx, ws, frame)],
     ["auth.x.status", (ws, frame) => handleAuthXStatus(authCtx, ws, frame)],
@@ -215,5 +232,20 @@ export function createHandlerRegistry(
       (ws, frame) => handleNewsSourceFetchNow(newsSourceCtx, ws, frame),
     ],
     ["xpost.generate", (ws, frame) => handleXpostGenerate(xpostCtx, ws, frame)],
+    ["sessions.list", (ws, frame) => handleSessionsList(sessionCtx, ws, frame)],
+    ["sessions.get", (ws, frame) => handleSessionsGet(sessionCtx, ws, frame)],
+    [
+      "sessions.create",
+      (ws, frame) => handleSessionsCreate(sessionCtx, ws, frame),
+    ],
+    [
+      "sessions.delete",
+      (ws, frame) => handleSessionsDelete(sessionCtx, ws, frame),
+    ],
+    [
+      "sessions.updateTitle",
+      (ws, frame) => handleSessionsUpdateTitle(sessionCtx, ws, frame),
+    ],
+    ["chat.history", (ws, frame) => handleChatHistory(sessionCtx, ws, frame)],
   ]);
 }
