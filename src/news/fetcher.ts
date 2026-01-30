@@ -4,34 +4,53 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 
 import type { NewsArticle, NewsSource } from "./types.js";
 
-/**
- * Anthropicニュースをスキル経由で取得
- * @returns ニュース記事配列
- */
-export async function fetchAnthropicNews(): Promise<NewsArticle[]> {
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const FETCH_TIMEOUT_MS = 1800000; // 30 minutes
+
+export const ANTHROPIC_SOURCES = {
+  blog: "https://www.anthropic.com/news",
+  research: "https://www.anthropic.com/research",
+  engineering: "https://www.anthropic.com/engineering",
+} as const;
+
+export type AnthropicSourceType = keyof typeof ANTHROPIC_SOURCES;
+
+export interface FetchOptions {
+  sources?: AnthropicSourceType[];
+  translate?: boolean;
+}
+
+export async function fetchAnthropicNews(
+  options: FetchOptions = {},
+): Promise<NewsArticle[]> {
+  const { sources = ["blog", "research", "engineering"], translate = false } =
+    options;
+
   try {
     let result: string | undefined;
-    const timeoutMs = 600000; // 10分（agent-browser用）
     const startTime = Date.now();
 
-    console.log("[NewsFetcher] Starting query with /anthropic-news-fetch");
+    const sourcesParam = sources.join(",");
+    const prompt = translate
+      ? `/anthropic-news-fetch sources=${sourcesParam} translate=true`
+      : `/anthropic-news-fetch sources=${sourcesParam}`;
+
+    console.log(`[NewsFetcher] Starting query with: ${prompt}`);
 
     for await (const message of query({
-      prompt: "/anthropic-news-fetch",
+      prompt,
       options: {
         cwd: process.cwd(),
         settingSources: ["user", "project"],
         allowedTools: ["Skill", "Bash"],
         model: "sonnet",
-        maxTurns: 30, // agent-browser操作用
+        maxTurns: 60,
       },
     })) {
-      // すべてのメッセージをログ出力
       console.log("[NewsFetcher] Message:", JSON.stringify(message, null, 2));
 
-      // タイムアウトチェック
-      if (Date.now() - startTime > timeoutMs) {
-        console.warn("[NewsFetcher] Timeout after 10 minutes");
+      if (Date.now() - startTime > FETCH_TIMEOUT_MS) {
+        console.warn("[NewsFetcher] Timeout after 30 minutes");
         break;
       }
 
@@ -64,13 +83,6 @@ export async function fetchAnthropicNews(): Promise<NewsArticle[]> {
   }
 }
 
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-
-/**
- * 直近24時間の記事のみフィルタ
- * @param articles ニュース記事配列
- * @returns フィルタ後の記事配列
- */
 export function filterLast24Hours(articles: NewsArticle[]): NewsArticle[] {
   const oneDayAgo = Date.now() - ONE_DAY_MS;
 
@@ -81,25 +93,21 @@ export function filterLast24Hours(articles: NewsArticle[]): NewsArticle[] {
   });
 }
 
-/** コマンド出力のJSON型定義 */
 interface CommandOutput {
   articles: Array<{
     source: string;
     title: string;
+    titleJa?: string;
     url: string;
     publishedAt: string;
     summary: string;
     body?: string;
+    bodyJa?: string;
     imageUrl?: string;
   }>;
   error?: string;
 }
 
-/**
- * JSON出力をパースしてNewsArticle配列に変換
- * @param output コマンド出力（JSON形式）
- * @returns パース後の記事配列
- */
 function parseJsonToArticles(output: string): NewsArticle[] {
   const fetchedAt = new Date().toISOString();
 
@@ -135,12 +143,14 @@ function parseJsonToArticles(output: string): NewsArticle[] {
         id,
         source,
         title: article.title,
+        titleJa: article.titleJa || null,
         summary: article.summary || null,
         url: article.url,
         publishedAt,
         fetchedAt,
         contentHash,
         body: article.body || null,
+        bodyJa: article.bodyJa || null,
         imageUrl: article.imageUrl || null,
       };
     });
@@ -150,9 +160,6 @@ function parseJsonToArticles(output: string): NewsArticle[] {
   }
 }
 
-/**
- * ソース文字列をNewsSourceにマッピング
- */
 function mapSource(source: string): NewsSource {
   const normalized = source.toLowerCase();
 
@@ -163,14 +170,17 @@ function mapSource(source: string): NewsSource {
     return "claude-code";
   }
 
+  if (normalized === "research") {
+    return "research";
+  }
+
+  if (normalized === "engineering") {
+    return "engineering";
+  }
+
   return "blog";
 }
 
-/**
- * 日付文字列をISO 8601形式にパース
- * @param dateStr 日付文字列（例: "2025-01-20", "Jan 20, 2025"）
- * @returns ISO 8601形式の日付文字列またはnull
- */
 function parseDateString(dateStr: string | undefined): string | null {
   if (!dateStr) return null;
 
@@ -183,16 +193,10 @@ function parseDateString(dateStr: string | undefined): string | null {
   }
 }
 
-/**
- * 記事IDを生成（URLのハッシュ）
- */
 function generateArticleId(url: string): string {
   return crypto.createHash("sha256").update(url).digest("hex").slice(0, 16);
 }
 
-/**
- * コンテンツハッシュを生成（変更検知用）
- */
 function generateContentHash(
   title: string,
   url: string,

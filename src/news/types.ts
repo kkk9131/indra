@@ -1,13 +1,20 @@
 import { z } from "zod";
 
-export type NewsSource =
-  | "claude-code"
-  | "blog"
-  | "indra-log"
-  | "news-report"
-  | "x-account"
-  | "github-changelog";
-export type NewsSourceType = "x-account" | "rss" | "web" | "github";
+const NEWS_SOURCES = [
+  "claude-code",
+  "blog",
+  "research",
+  "engineering",
+  "indra-log",
+  "news-report",
+  "x-account",
+  "github-changelog",
+] as const;
+
+const NEWS_SOURCE_TYPES = ["x-account", "rss", "web", "github"] as const;
+
+export type NewsSource = (typeof NEWS_SOURCES)[number];
+export type NewsSourceType = (typeof NEWS_SOURCE_TYPES)[number];
 
 export interface XAccountConfig {
   handle: string;
@@ -56,7 +63,7 @@ export const GitHubChangelogConfigSchema = z.object({
 export const NewsSourceDefinitionSchema = z.object({
   id: z.string(),
   name: z.string(),
-  sourceType: z.enum(["x-account", "rss", "web", "github"]),
+  sourceType: z.enum(NEWS_SOURCE_TYPES),
   sourceConfig: z.union([
     XAccountConfigSchema,
     GitHubChangelogConfigSchema,
@@ -72,32 +79,29 @@ export interface NewsArticle {
   id: string;
   source: NewsSource;
   title: string;
+  titleJa: string | null;
   summary: string | null;
   url: string;
   publishedAt: string | null;
   fetchedAt: string;
   contentHash?: string | null;
   body: string | null;
+  bodyJa: string | null;
   imageUrl: string | null;
 }
 
 export const NewsArticleSchema = z.object({
   id: z.string(),
-  source: z.enum([
-    "claude-code",
-    "blog",
-    "indra-log",
-    "news-report",
-    "x-account",
-    "github-changelog",
-  ]),
+  source: z.enum(NEWS_SOURCES),
   title: z.string(),
+  titleJa: z.string().nullable(),
   summary: z.string().nullable(),
   url: z.string(),
   publishedAt: z.string().nullable(),
   fetchedAt: z.string(),
   contentHash: z.string().nullable().optional(),
   body: z.string().nullable(),
+  bodyJa: z.string().nullable(),
   imageUrl: z.string().nullable(),
 });
 

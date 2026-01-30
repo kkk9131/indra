@@ -7,6 +7,9 @@ import { fetchAnthropicNews, filterLast24Hours } from "./fetcher.js";
 import { NewsStore } from "./store.js";
 import type { NewsArticle } from "./types.js";
 
+const SCHEDULE_CRON = "0 6 * * *";
+const LOG_PREFIX = "NewsScheduler:";
+
 export class NewsScheduler {
   private task: cron.ScheduledTask | null = null;
   private store: NewsStore;
@@ -19,92 +22,94 @@ export class NewsScheduler {
 
   start(): void {
     if (this.task !== null) {
-      console.warn("NewsScheduler: Already started");
+      console.warn(`${LOG_PREFIX} Already started`);
       return;
     }
 
-    this.task = cron.schedule("0 6 * * *", () => {
+    this.task = cron.schedule(SCHEDULE_CRON, () => {
       this.run().catch((error) => {
-        console.error("NewsScheduler: Error during scheduled run:", error);
+        console.error(`${LOG_PREFIX} Error during scheduled run:`, error);
       });
     });
 
-    console.log("NewsScheduler: Started (scheduled for 06:00 every day)");
+    console.log(`${LOG_PREFIX} Started (scheduled for 06:00 every day)`);
   }
 
   stop(): void {
     if (this.task === null) {
-      console.warn("NewsScheduler: Not running");
+      console.warn(`${LOG_PREFIX} Not running`);
       return;
     }
 
     this.task.stop();
     this.task = null;
 
-    console.log("NewsScheduler: Stopped");
+    console.log(`${LOG_PREFIX} Stopped`);
   }
 
   async run(): Promise<void> {
+    console.log(`${LOG_PREFIX} Running news fetch...`);
+
+    const articles = await fetchAnthropicNews({
+      sources: ["blog", "research", "engineering"],
+      translate: true,
+    });
+    const filtered = filterLast24Hours(articles);
+
+    const changelogArticles = await this.fetchChangelog();
+    const allArticles = [...filtered, ...changelogArticles];
+
+    await this.store.save(allArticles);
+    this.onUpdate(allArticles);
+    this.logOutcomes(allArticles);
+
+    console.log(
+      `${LOG_PREFIX} Fetched and saved ${allArticles.length} articles (${filtered.length} news, ${changelogArticles.length} changelog)`,
+    );
+  }
+
+  private async fetchChangelog(): Promise<NewsArticle[]> {
     try {
-      console.log("NewsScheduler: Running news fetch...");
-
-      const articles = await fetchAnthropicNews();
-      const filtered = filterLast24Hours(articles);
-
-      let changelogArticles: NewsArticle[] = [];
-      try {
-        const allChangelogArticles = await fetchGitHubChangelog({
-          owner: "anthropics",
-          repo: "claude-code",
-        });
-        changelogArticles = allChangelogArticles.filter(
-          (article) => !this.store.hasHash(article.contentHash!),
-        );
-        console.log(
-          `NewsScheduler: Found ${changelogArticles.length} new changelog entries`,
-        );
-      } catch (changelogError) {
-        console.error(
-          "NewsScheduler: Error fetching changelog:",
-          changelogError,
-        );
-      }
-
-      const allArticles = [...filtered, ...changelogArticles];
-      await this.store.save(allArticles);
-      this.onUpdate(allArticles);
-
-      // OutcomeLog記録（各記事ごと）
-      const collector = new LogCollector({ sessionId: "news-scheduler" });
-      for (const article of allArticles) {
-        const outcomeId = crypto.randomUUID();
-        const outcomeContent: OutcomeContent = {
-          report: {
-            title: article.title,
-            summary: article.summary ?? "",
-          },
-        };
-        collector.addOutcomeLog(
-          outcomeId,
-          "", // schedulerにはexecutionIdなし
-          "report",
-          "final", // schedulerの場合はdraftなしでfinal
-          outcomeContent,
-          undefined,
-          {
-            articleId: article.id,
-            source: article.source,
-            url: article.url,
-          },
-        );
-      }
-
-      console.log(
-        `NewsScheduler: Fetched and saved ${allArticles.length} articles (${filtered.length} news, ${changelogArticles.length} changelog)`,
+      const allChangelogArticles = await fetchGitHubChangelog({
+        owner: "anthropics",
+        repo: "claude-code",
+      });
+      const newArticles = allChangelogArticles.filter(
+        (article) => !this.store.hasHash(article.contentHash!),
       );
+      console.log(
+        `${LOG_PREFIX} Found ${newArticles.length} new changelog entries`,
+      );
+      return newArticles;
     } catch (error) {
-      console.error("NewsScheduler: Error during run:", error);
-      throw error;
+      console.error(`${LOG_PREFIX} Error fetching changelog:`, error);
+      return [];
+    }
+  }
+
+  private logOutcomes(articles: NewsArticle[]): void {
+    const collector = new LogCollector({ sessionId: "news-scheduler" });
+
+    for (const article of articles) {
+      const outcomeContent: OutcomeContent = {
+        report: {
+          title: article.title,
+          summary: article.summary ?? "",
+        },
+      };
+      collector.addOutcomeLog(
+        crypto.randomUUID(),
+        "",
+        "report",
+        "final",
+        outcomeContent,
+        undefined,
+        {
+          articleId: article.id,
+          source: article.source,
+          url: article.url,
+        },
+      );
     }
   }
 }

@@ -1,5 +1,8 @@
 import type { NewsArticle, XAccountConfig } from "./types.js";
 
+const TITLE_MAX_LENGTH = 100;
+const DEFAULT_MAX_TWEETS = 20;
+
 export interface XTweet {
   id: string;
   text: string;
@@ -21,34 +24,35 @@ export interface XFetchResult {
   fetchedAt: string;
 }
 
-export function tweetToArticle(tweet: XTweet): NewsArticle {
-  const title =
-    tweet.text.length > 100 ? tweet.text.slice(0, 100) + "..." : tweet.text;
+function truncateTitle(text: string): string {
+  if (text.length <= TITLE_MAX_LENGTH) {
+    return text;
+  }
+  return text.slice(0, TITLE_MAX_LENGTH) + "...";
+}
 
+export function tweetToArticle(tweet: XTweet): NewsArticle {
   return {
     id: `x-${tweet.id}`,
     source: "x-account",
-    title,
+    title: truncateTitle(tweet.text),
+    titleJa: null,
     summary: tweet.text,
     url: tweet.url,
     publishedAt: tweet.publishedAt,
     fetchedAt: new Date().toISOString(),
     contentHash: `x-${tweet.id}`,
     body: tweet.text,
+    bodyJa: null,
     imageUrl: null,
   };
 }
 
-/**
- * Xアカウントからツイートを取得
- * TODO: agent-browserスキルを使用した実装
- */
 export async function fetchXAccount(
   config: XAccountConfig,
 ): Promise<XFetchResult> {
-  console.log(
-    `[XFetcher] Fetching ${config.handle} (max: ${config.maxTweets ?? 20})`,
-  );
+  const maxTweets = config.maxTweets ?? DEFAULT_MAX_TWEETS;
+  console.log(`[XFetcher] Fetching ${config.handle} (max: ${maxTweets})`);
 
   return {
     tweets: [],

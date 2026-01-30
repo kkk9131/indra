@@ -5,6 +5,8 @@ import { join } from "node:path";
 import type { NewsArticle } from "./types.js";
 import { NewsArticleSchema } from "./types.js";
 
+const MIGRATION_COLUMNS = ["body", "imageUrl", "titleJa", "bodyJa"] as const;
+
 export class NewsStore {
   private db: Database.Database;
 
@@ -20,19 +22,21 @@ export class NewsStore {
         id TEXT PRIMARY KEY,
         source TEXT NOT NULL,
         title TEXT NOT NULL,
+        titleJa TEXT,
         summary TEXT,
         url TEXT NOT NULL,
         publishedAt TEXT,
         fetchedAt TEXT NOT NULL,
         contentHash TEXT,
         body TEXT,
+        bodyJa TEXT,
         imageUrl TEXT
       )
     `);
 
-    // 既存テーブルにカラムがない場合は追加
-    this.addColumnIfNotExists("body", "TEXT");
-    this.addColumnIfNotExists("imageUrl", "TEXT");
+    for (const column of MIGRATION_COLUMNS) {
+      this.addColumnIfNotExists(column, "TEXT");
+    }
 
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_news_fetchedAt ON news_articles(fetchedAt DESC)
@@ -42,7 +46,6 @@ export class NewsStore {
       CREATE INDEX IF NOT EXISTS idx_news_contentHash ON news_articles(contentHash)
     `);
 
-    // マイグレーション: log-analysis → indra-log
     this.migrateSource("log-analysis", "indra-log");
   }
 
@@ -80,17 +83,19 @@ export class NewsStore {
 
   save(articles: NewsArticle[]): void {
     const upsert = this.db.prepare(`
-      INSERT INTO news_articles (id, source, title, summary, url, publishedAt, fetchedAt, contentHash, body, imageUrl)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO news_articles (id, source, title, titleJa, summary, url, publishedAt, fetchedAt, contentHash, body, bodyJa, imageUrl)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         source = excluded.source,
         title = excluded.title,
+        titleJa = excluded.titleJa,
         summary = excluded.summary,
         url = excluded.url,
         publishedAt = excluded.publishedAt,
         fetchedAt = excluded.fetchedAt,
         contentHash = excluded.contentHash,
         body = excluded.body,
+        bodyJa = excluded.bodyJa,
         imageUrl = excluded.imageUrl
     `);
 
@@ -100,12 +105,14 @@ export class NewsStore {
           article.id,
           article.source,
           article.title,
+          article.titleJa ?? null,
           article.summary,
           article.url,
           article.publishedAt,
           article.fetchedAt,
           article.contentHash ?? null,
           article.body ?? null,
+          article.bodyJa ?? null,
           article.imageUrl ?? null,
         );
       }

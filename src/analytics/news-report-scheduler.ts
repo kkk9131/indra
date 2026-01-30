@@ -1,11 +1,15 @@
 import { randomUUID } from "node:crypto";
 import cron from "node-cron";
-import type { NewsArticle } from "../news/types.js";
-import type { NewsStore } from "../news/store.js";
+
 import type { ApprovalQueue } from "../approval/queue.js";
+import type { NewsStore } from "../news/store.js";
+import type { NewsArticle } from "../news/types.js";
 import { NewsEvaluator, type RankedItem } from "./news-evaluator.js";
 
-/** News Report のアイテム */
+const SCHEDULE_CRON = "0 6 * * *";
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const LOG_PREFIX = "NewsReportScheduler:";
+
 export interface NewsReportItem {
   rank: number;
   type: "news" | "post";
@@ -20,7 +24,6 @@ export interface NewsReportItem {
   sourceUrl?: string;
 }
 
-/** News Report */
 export interface NewsReport {
   id: string;
   source: "news-report";
@@ -32,11 +35,6 @@ export interface NewsReport {
   generatedAt: string;
 }
 
-/**
- * News Report スケジューラー
- *
- * 過去24時間のニュース・投稿を評価し、Top3レポートを生成する
- */
 export class NewsReportScheduler {
   private task: cron.ScheduledTask | null = null;
   private newsStore: NewsStore;
@@ -61,98 +59,70 @@ export class NewsReportScheduler {
     this.onReportGenerated = onReportGenerated;
   }
 
-  /**
-   * スケジューラーを開始（毎朝6時に実行）
-   */
   start(): void {
     if (this.task !== null) {
-      console.warn("NewsReportScheduler: Already started");
+      console.warn(`${LOG_PREFIX} Already started`);
       return;
     }
 
-    this.task = cron.schedule("0 6 * * *", () => {
+    this.task = cron.schedule(SCHEDULE_CRON, () => {
       this.run().catch((error) => {
-        console.error(
-          "NewsReportScheduler: Error during scheduled run:",
-          error,
-        );
+        console.error(`${LOG_PREFIX} Error during scheduled run:`, error);
       });
     });
 
-    console.log("NewsReportScheduler: Started (scheduled for 06:00 every day)");
+    console.log(`${LOG_PREFIX} Started (scheduled for 06:00 every day)`);
   }
 
-  /**
-   * スケジューラーを停止
-   */
   stop(): void {
     if (this.task === null) {
-      console.warn("NewsReportScheduler: Not running");
+      console.warn(`${LOG_PREFIX} Not running`);
       return;
     }
 
     this.task.stop();
     this.task = null;
 
-    console.log("NewsReportScheduler: Stopped");
+    console.log(`${LOG_PREFIX} Stopped`);
   }
 
-  /**
-   * 過去24時間のニュースを取得
-   */
   private getRecentNews(): NewsArticle[] {
-    const now = new Date();
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const cutoff = new Date(Date.now() - ONE_DAY_MS);
+    const excludedSources = new Set(["news-report", "indra-log"]);
 
-    const allArticles = this.newsStore.list();
-    return allArticles.filter((article) => {
-      const fetchedAt = new Date(article.fetchedAt);
-      // news-report と indra-log は評価対象から除外
-      if (article.source === "news-report" || article.source === "indra-log") {
+    return this.newsStore.list().filter((article) => {
+      if (excludedSources.has(article.source)) {
         return false;
       }
-      return fetchedAt >= yesterday;
+      return new Date(article.fetchedAt) >= cutoff;
     });
   }
 
-  /**
-   * 過去24時間の投稿済みアイテムを取得
-   */
   private getRecentPosts(): ReturnType<ApprovalQueue["list"]> {
-    const now = new Date();
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const cutoff = new Date(Date.now() - ONE_DAY_MS);
 
-    const allItems = this.approvalQueue.list();
-    return allItems.filter((item) => {
+    return this.approvalQueue.list().filter((item) => {
       if (item.status !== "posted") {
         return false;
       }
-      const createdAt = new Date(item.createdAt);
-      return createdAt >= yesterday;
+      return new Date(item.createdAt) >= cutoff;
     });
   }
 
-  /**
-   * News Report を手動実行
-   */
   async run(): Promise<NewsReport> {
-    console.log("NewsReportScheduler: Running news report generation...");
+    console.log(`${LOG_PREFIX} Running news report generation...`);
 
     const now = new Date();
     const periodEnd = now.toISOString();
-    const periodStart = new Date(
-      now.getTime() - 24 * 60 * 60 * 1000,
-    ).toISOString();
+    const periodStart = new Date(now.getTime() - ONE_DAY_MS).toISOString();
 
-    // 過去24時間のニュース・投稿を取得
     const recentNews = this.getRecentNews();
     const recentPosts = this.getRecentPosts();
 
     console.log(
-      `NewsReportScheduler: Found ${recentNews.length} news, ${recentPosts.length} posts`,
+      `${LOG_PREFIX} Found ${recentNews.length} news, ${recentPosts.length} posts`,
     );
 
-    // 評価アイテムを作成
     const evaluationItems = [
       ...recentNews.map((article) =>
         this.evaluator.newsToEvaluationItem(article),
@@ -160,18 +130,11 @@ export class NewsReportScheduler {
       ...recentPosts.map((post) => this.evaluator.postToEvaluationItem(post)),
     ];
 
-    let rankedItems: RankedItem[] = [];
-    let summary = "";
+    const [rankedItems, summary] =
+      evaluationItems.length > 0
+        ? await this.evaluateItems(evaluationItems)
+        : [[], "過去24時間に評価対象のニュース・投稿がありませんでした。"];
 
-    if (evaluationItems.length > 0) {
-      // GLMで評価
-      rankedItems = await this.evaluator.evaluate(evaluationItems);
-      summary = await this.evaluator.generateSummary(rankedItems);
-    } else {
-      summary = "過去24時間に評価対象のニュース・投稿がありませんでした。";
-    }
-
-    // レポートを作成
     const report: NewsReport = {
       id: randomUUID(),
       source: "news-report",
@@ -195,22 +158,23 @@ export class NewsReportScheduler {
       generatedAt: now.toISOString(),
     };
 
-    // NewsArticle 形式に変換
     const article = this.reportToArticle(report);
-
-    // コールバックで通知
     await this.onReportGenerated(report, article);
 
-    console.log(`NewsReportScheduler: Generated report ${report.id}`);
+    console.log(`${LOG_PREFIX} Generated report ${report.id}`);
 
     return report;
   }
 
-  /**
-   * NewsReport を NewsArticle に変換
-   */
+  private async evaluateItems(
+    items: ReturnType<NewsEvaluator["newsToEvaluationItem"]>[],
+  ): Promise<[RankedItem[], string]> {
+    const rankedItems = await this.evaluator.evaluate(items);
+    const summary = await this.evaluator.generateSummary(rankedItems);
+    return [rankedItems, summary];
+  }
+
   private reportToArticle(report: NewsReport): NewsArticle {
-    // Top3 アイテムを含む詳細なサマリー
     const topItemsSummary = report.topItems
       .map(
         (item) =>
@@ -225,11 +189,13 @@ export class NewsReportScheduler {
       id: report.id,
       source: "news-report",
       title: report.title,
+      titleJa: null,
       summary: fullSummary,
       url: `#report/${report.id}`,
       publishedAt: report.generatedAt,
       fetchedAt: report.generatedAt,
       body: JSON.stringify(report, null, 2),
+      bodyJa: null,
       imageUrl: null,
     };
   }

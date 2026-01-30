@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 import type { GitHubChangelogConfig, NewsArticle } from "./types.js";
 
+const VERSION_REGEX = /^## \[?v?(\d+\.\d+\.\d+[^\]\n]*)\]?/gm;
+
 export interface ChangelogEntry {
   version: string;
   content: string;
@@ -9,10 +11,7 @@ export interface ChangelogEntry {
 
 export function parseChangelog(markdown: string): ChangelogEntry[] {
   const entries: ChangelogEntry[] = [];
-
-  // ## [vX.X.X] または ## [X.X.X] または ## X.X.X 形式のセクションを検出
-  const versionRegex = /^## \[?v?(\d+\.\d+\.\d+[^\]\n]*)\]?/gm;
-  const matches = [...markdown.matchAll(versionRegex)];
+  const matches = [...markdown.matchAll(VERSION_REGEX)];
 
   for (let i = 0; i < matches.length; i++) {
     const match = matches[i];
@@ -45,12 +44,14 @@ export function changelogEntryToArticle(
     id,
     source: "github-changelog",
     title: `Claude Code v${entry.version}`,
+    titleJa: null,
     summary: null,
     url: `https://github.com/${owner}/${repo}/blob/${branch}/${filePath}`,
     publishedAt: null,
     fetchedAt: new Date().toISOString(),
     contentHash,
     body: entry.content,
+    bodyJa: null,
     imageUrl: null,
   };
 }
