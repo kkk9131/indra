@@ -1184,6 +1184,48 @@ X投稿ワークフローUI完結実装
 
 ---
 
+## 2026-01-31 17:52 [IMPL] Claude Agent SDK subagents基盤を実装
+
+### 実装内容
+
+- **SDK調査:**
+  - `https://platform.claude.com/docs/ja/agent-sdk/skills` - skills使用方法調査
+  - `https://platform.claude.com/docs/ja/agent-sdk/subagents` - subagents使用方法調査
+  - openclawリポジトリ構造を参照（ハイブリッド構成の実例）
+- **`.claude/agents/` SDK形式に整理:**
+  - `x-operations-agent.md` - SDK形式（name, description, tools, model）に変換
+  - `general-purpose-agent.md` - Opusモデルの汎用エージェント新規作成
+  - `references/`と`examples/`を`.claude/references/x-operations/`に移動（SDKは認識しない）
+- **プログラマティック基盤（src/orchestrator/agents/）:**
+  - `types.ts` - AgentDefinition, SDKAgentDefinition型定義、変換関数
+  - `loader.ts` - `.claude/agents/*.md`からagent定義を読み込み
+  - `registry.ts` - AgentRegistry class（登録、取得、SDK形式変換）
+  - `index.ts` - エクスポート
+
+### 成功
+
+- ハイブリッド構成確立（ファイルシステム + プログラマティック基盤）
+- SDK形式のsubagent定義2件作成
+- 既存コミット（ディレクトリ再編）をプッシュ完了
+
+### 学び
+
+- **Skills vs Subagents:**
+  - Skills: ファイルシステムのみ、Claudeが自律的に呼び出す特殊機能
+  - Subagents: プログラマティック（推奨）またはファイルシステム、コンテキスト分離・並列実行
+- **SDK設定:**
+  - `settingSources: ['user', 'project']` でファイルシステムからskills/subagentsを読み込み
+  - `agents`パラメータでプログラマティック定義をSDKに渡す
+- **openclawの構成:**
+  - `skills/` - ファイルシステムベースのスキル
+  - `src/agents/` - プログラマティックな基盤コード
+
+### 関連タスク
+
+Claude Agent SDK subagents統合
+
+---
+
 ## 2026-01-31 06:44 [DOCS] ディレクトリ構成・運用ドキュメント整備
 
 ### 実装内容
