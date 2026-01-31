@@ -5,7 +5,7 @@
   "description": "Local multi-agent AI assistant (CLI + Web UI hybrid)",
   "main": "dist/index.js",
   "bin": {
-    "indra": "dist/cli/entry.js"
+    "indra": "dist/channels/cli/entry.js"
   },
   "scripts": {
     "build": "tsc",
@@ -15,8 +15,8 @@
     "lint": "oxlint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "cli": "node --env-file=.env dist/cli/entry.js",
-    "gateway": "node --env-file=.env dist/gateway/entry.js"
+    "cli": "node --env-file=.env dist/channels/cli/entry.js",
+    "gateway": "node --env-file=.env dist/channels/gateway/entry.js"
   },
   "engines": {
     "node": ">=20.0.0"

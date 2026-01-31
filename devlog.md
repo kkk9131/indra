@@ -2,6 +2,28 @@
 
 ---
 
+## 2026-01-31 06:43 [REFACTOR] ディレクトリ再編と運用ドキュメント整備
+
+### 実装内容
+
+- `src/` を `capabilities / channels / orchestrator / platform / integrations` に再編
+- `news` を `capabilities/content` 配下に移動、`xpost` を `capabilities/social/x` に移動
+- 相対 import を新構成へ追従
+- `.claude/skills` / `.claude/subagents` の可視化用に `skills/` `subagents/` をシンボリックリンクで追加
+- `docs/skills.md` と `docs/architecture.md` を作成（運用方針・命名規則・構成・図）
+- `package.json` の `bin` / `scripts` を新しい `dist/channels/*` に更新
+
+### 成功
+
+- `pnpm build` 通過
+- `pnpm test` 通過（35 passed / 13 skipped）
+
+### 関連タスク
+
+ローカル専用の汎用AIエージェント構成最適化
+
+---
+
 ## 2026-01-24 19:21 [IMPL] Phase 1 基盤実装を完了
 
 ### 実装内容
@@ -1159,3 +1181,33 @@ X投稿ワークフローUI完結実装
 ### 関連タスク
 
 ストリーミング入力モード導入計画
+
+---
+
+## 2026-01-31 06:44 [DOCS] ディレクトリ構成・運用ドキュメント整備
+
+### 実装内容
+
+- `docs/architecture.md` の内容を確認・分析
+- `.claude/agent-docs/12-directory-structure.md` を新規作成
+  - 運用方針（単一責務、依存方向ルール等）
+  - 命名規則（ディレクトリ/ファイル/スキル/サブエージェント）
+  - ディレクトリ構成（5層: capabilities/channels/integrations/orchestrator/platform）
+  - 新機能追加・既存機能拡張フロー
+- `.claude/CLAUDE.md` を更新
+  - ディレクトリ構成セクションを新構造に変更
+  - ドキュメント一覧に `12-directory-structure.md` 参照を追加
+
+### 成功
+
+- 新アーキテクチャ（5層構造）がClaude Codeコンテキストに反映
+- 既存の `02-architecture.md`（技術仕様）と分離して運用ガイドを追加
+
+### 学び
+
+- 技術仕様（WebSocket、セッション等）と運用ガイド（命名規則、構成等）は別ドキュメントが適切
+- `.claude/agent-docs/` は番号付きで管理し、目的別に分離
+
+### 関連タスク
+
+docs確認・agent-docs整備

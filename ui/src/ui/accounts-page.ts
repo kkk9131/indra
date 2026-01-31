@@ -691,7 +691,7 @@ export class AccountsPageElement extends LitElement {
         <button
           class="btn btn-secondary"
           disabled
-          style="background: #2e7d32; color: white; border-color: #2e7d32;"
+          style="background: #4A50C7; color: white; border-color: #4A50C7;"
         >
           Connected
         </button>

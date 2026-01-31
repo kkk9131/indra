@@ -18,10 +18,16 @@ Claude Agent SDKを活用したローカル汎用エージェント。CLI + Web 
 ## ディレクトリ構成
 
 ```
-src/           # コアロジック
-ui/            # Web UI (Litコンポーネント)
-extensions/    # プラグイン（将来）
+src/
+├── capabilities/   # 機能ロジック（social/x, content/news等）
+├── channels/       # 入出力（cli, discord, gateway）
+├── integrations/   # 外部API連携
+├── orchestrator/   # LLM・スケジューラ統括
+└── platform/       # 横断基盤（auth, memory, logs等）
+ui/                 # Web UI (Litコンポーネント)
 ```
+
+→ 詳細: `.claude/agent-docs/12-directory-structure.md`
 
 ## 開発コマンド
 
@@ -67,6 +73,7 @@ pnpm lint             # リント
 - Xアルゴリズム: `.claude/agent-docs/09-x-algorithm.md`
 - Xアカウント情報: `.claude/agent-docs/10-x-account.md`
 - 評価システム: `.claude/agent-docs/11-evaluation-system.md`
+- ディレクトリ構成・運用: `.claude/agent-docs/12-directory-structure.md`
 
 ## Skills
 
@@ -84,9 +91,12 @@ pnpm lint             # リント
 - x-algorithm-evaluate: `.claude/skills/x-algorithm-evaluate/`
 - x-post-refine: `.claude/skills/x-post-refine/`
 
+## Agents
+
+- x-operations-agent: `.claude/agents/x-operations-agent.md`
+  → X運用統括（ポスト作成・評価・改善・分析）
+
 ## Subagents
 
 - analysis-agent: `.claude/subagents/analysis-agent.md`
 - report-agent: `.claude/subagents/report-agent.md`
-- x-post-creator: `.claude/subagents/x-post-creator.md`
-- x-post-evaluator: `.claude/subagents/x-post-evaluator.md`
