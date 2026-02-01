@@ -42,34 +42,37 @@ indra/
 ├── tsconfig.json
 ├── vitest.config.ts
 │
-├── src/                    # コア
-│   ├── cli/                # CLI関連
-│   ├── commands/           # CLIコマンド
-│   ├── gateway/            # WebSocketサーバー
-│   │   └── protocol/       # 通信プロトコル
-│   ├── agents/             # エージェント管理
-│   ├── llm/                # LLMプロバイダー抽象化
-│   ├── connectors/         # 外部サービスコネクター
-│   │   ├── x/              # X (Twitter)
-│   │   ├── note/           # note
-│   │   ├── discord/        # Discord
-│   │   └── github/         # GitHub
-│   ├── news/               # ニュース取得
-│   ├── media/              # 動画/画像生成
-│   ├── scaffold/           # 足場計算・作図
-│   ├── approval/           # 承認フロー
-│   ├── scheduler/          # スケジュール管理
-│   ├── logging/            # ログ・分析
-│   ├── config/             # 設定管理
-│   └── infra/              # 基盤（DB等）
+├── .claude/
+│   ├── agents/             # エージェント定義（マークダウン）
+│   └── skills/             # スキル定義
 │
-├── ui/                     # Web UI
-│   ├── package.json
-│   ├── vite.config.ts
-│   └── src/
-│       └── ui/             # Litコンポーネント
+├── src/
+│   ├── capabilities/       # 機能ロジック
+│   │   ├── content/news/   # ニュース取得・要約
+│   │   └── social/x/       # X運用
+│   ├── channels/           # 入出力
+│   │   ├── cli/            # CLI
+│   │   ├── discord/        # Discord連携
+│   │   └── gateway/        # WebSocketサーバー
+│   ├── integrations/       # 外部API連携
+│   ├── orchestrator/       # LLM・スケジューラ統括
+│   │   ├── agents/         # エージェント管理基盤
+│   │   │   ├── subagent/   # 実行状態管理（共通）
+│   │   │   └── x-operations/  # X運用エージェント
+│   │   ├── llm/            # LLMプロバイダー
+│   │   └── scheduler/      # スケジューラ
+│   └── platform/           # 横断基盤
+│       ├── approval/       # 承認フロー
+│       ├── auth/           # 認証
+│       ├── logs/           # ログ・分析
+│       └── memory/         # メモリ管理
 │
-└── extensions/             # プラグイン（将来）
+├── data/
+│   └── runs/               # 実行状態永続化
+│
+├── ui/                     # Web UI (Lit)
+│
+└── docs/                   # ドキュメント
 ```
 
 ## 参考リポジトリ

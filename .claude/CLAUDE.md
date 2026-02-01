@@ -23,8 +23,12 @@ src/
 ├── channels/       # 入出力（cli, discord, gateway）
 ├── integrations/   # 外部API連携
 ├── orchestrator/   # LLM・スケジューラ統括
+│   └── agents/     # エージェント管理基盤
+│       ├── subagent/       # 実行状態管理（共通）
+│       └── x-operations/   # X運用エージェント
 └── platform/       # 横断基盤（auth, memory, logs等）
 ui/                 # Web UI (Litコンポーネント)
+data/runs/          # 実行状態永続化
 ```
 
 → 詳細: `.claude/agent-docs/12-directory-structure.md`
@@ -77,26 +81,38 @@ pnpm lint             # リント
 
 ## Skills
 
-- agent-browser: `.claude/skills/agent-browser/`
-- anthropic-news-fetch: `.claude/skills/anthropic-news-fetch/`
-- anthropic-news-summarize: `.claude/skills/anthropic-news-summarize/`
-- x-account-fetch: `.claude/skills/x-account-fetch/`
-- log-read: `.claude/skills/log-read/`
-- log-analyze: `.claude/skills/log-analyze/`
-- glm-analyze: `.claude/skills/glm-analyze/`
-- report-generate: `.claude/skills/report-generate/`
-- news-content-fetch: `.claude/skills/news-content-fetch/`
-- x-post-structure: `.claude/skills/x-post-structure/`
-- x-post-compose: `.claude/skills/x-post-compose/`
-- x-algorithm-evaluate: `.claude/skills/x-algorithm-evaluate/`
-- x-post-refine: `.claude/skills/x-post-refine/`
+### X運用
+
+- x-post-structure: 構文テンプレート生成
+- x-post-compose: ポスト生成
+- x-algorithm-evaluate: Xアルゴリズム評価
+- x-post-refine: 改善
+- x-account-fetch: アカウント情報取得
+
+### ニュース・コンテンツ
+
+- anthropic-news-fetch: Anthropicニュース取得
+- anthropic-news-summarize: ニュース要約
+- news-content-fetch: 記事情報抽出
+
+### ログ・分析・レポート
+
+- log-read / log-analyze / glm-analyze / report-generate
+
+### ブラウザ自動化
+
+- agent-browser: Web操作・スクレイピング
 
 ## Agents
 
 - x-operations-agent: `.claude/agents/x-operations-agent.md`
   → X運用統括（ポスト作成・評価・改善・分析）
+- general-purpose-agent: `.claude/agents/general-purpose-agent.md`
+  → 汎用エージェント
 
-## Subagents
+### Agents vs Skills
 
-- analysis-agent: `.claude/subagents/analysis-agent.md`
-- report-agent: `.claude/subagents/report-agent.md`
+| 概念  | 定義場所          | 役割                       |
+| ----- | ----------------- | -------------------------- |
+| Agent | `.claude/agents/` | ワークフロー制御、状態管理 |
+| Skill | `.claude/skills/` | 単一タスク実行（ツール）   |

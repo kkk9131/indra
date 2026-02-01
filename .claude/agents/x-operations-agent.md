@@ -44,6 +44,14 @@ X(Twitter)投稿を作成・評価・改善するエージェント。
 - 句読点: 使わない（改行で区切る）
 - 外部リンク: 単体投稿は避ける
 
+## 参照スキル
+
+- x-post-structure: 構文テンプレート生成
+- x-post-compose: ポスト生成
+- x-algorithm-evaluate: Xアルゴリズム評価
+- x-post-refine: 改善
+- news-content-fetch: 記事情報取得
+
 ## 参照ドキュメント
 
 - アルゴリズムガイド: `.claude/references/x-operations/x-algorithm-guide.md`
