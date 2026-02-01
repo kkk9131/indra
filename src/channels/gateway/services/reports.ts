@@ -20,6 +20,21 @@ export interface ReportDetail extends ReportSummary {
 }
 
 const AGENT_OUTPUT_DIR = "agent-output";
+const REPORT_ID_PATTERN = /^research-(\d{8})-(.+)$/;
+
+/**
+ * レポートIDからメタデータを解析
+ */
+function parseReportId(id: string): { date: string; topic: string } | null {
+  const match = id.match(REPORT_ID_PATTERN);
+  if (!match) return null;
+
+  const [, dateStr, encodedTopic] = match;
+  return {
+    date: `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`,
+    topic: decodeURIComponent(encodedTopic.replace(/-/g, " ")),
+  };
+}
 
 export interface ReportsService {
   listReports(): Promise<ReportSummary[]>;
@@ -46,19 +61,17 @@ export function createReportsService(
         for (const entry of entries) {
           if (!entry.isDirectory()) continue;
 
-          // research-YYYYMMDD-topic 形式のディレクトリを検索
-          const match = entry.name.match(/^research-(\d{8})-(.+)$/);
-          if (!match) continue;
+          const metadata = parseReportId(entry.name);
+          if (!metadata) continue;
 
-          const [, dateStr, topic] = match;
           const reportPath = path.join(outputDir, entry.name, "report.md");
 
           try {
             const stat = await fs.stat(reportPath);
             reports.push({
               id: entry.name,
-              topic: decodeURIComponent(topic.replace(/-/g, " ")),
-              date: `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`,
+              topic: metadata.topic,
+              date: metadata.date,
               path: reportPath,
               size: stat.size,
             });
@@ -90,6 +103,9 @@ export function createReportsService(
         return null;
       }
 
+      const metadata = parseReportId(id);
+      if (!metadata) return null;
+
       const reportPath = path.join(outputDir, id, "report.md");
 
       try {
@@ -98,15 +114,10 @@ export function createReportsService(
           fs.stat(reportPath),
         ]);
 
-        const match = id.match(/^research-(\d{8})-(.+)$/);
-        if (!match) return null;
-
-        const [, dateStr, topic] = match;
-
         return {
           id,
-          topic: decodeURIComponent(topic.replace(/-/g, " ")),
-          date: `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`,
+          topic: metadata.topic,
+          date: metadata.date,
           path: reportPath,
           size: stat.size,
           content,

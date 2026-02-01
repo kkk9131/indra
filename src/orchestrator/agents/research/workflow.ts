@@ -4,11 +4,10 @@
  * トピックを調査してレポートを作成するワークフローを管理
  */
 
-import {
-  type RunRegistry,
-  createRegistryHooksWithErrorHandling,
-} from "../subagent/index.js";
-import { createResearchAgents, toSDKAgentFormat } from "./agents.js";
+import { type RunRegistry } from "../subagent/index.js";
+// TODO: 将来のLLM統合時に使用
+// import { createRegistryHooksWithErrorHandling } from "../subagent/index.js";
+// import { createResearchAgents, toSDKAgentFormat } from "./agents.js";
 import type {
   OutcomeType,
   OutcomeStage,
@@ -124,24 +123,9 @@ export class ResearchWorkflow {
         initialCheckpoint as unknown as Record<string, unknown>,
       );
 
-      // 3. サブエージェント定義を作成
-      const agents = await createResearchAgents();
-      const sdkAgents = toSDKAgentFormat(agents);
-
-      // 4. フック設定
-      const hooks = createRegistryHooksWithErrorHandling(
-        this.registry,
-        run.id,
-        (error) => console.error("Hook error:", error),
-      );
-
-      // 5. ワークフロー実行
-      const result = await this.executeWorkflow(
-        run.id,
-        config,
-        sdkAgents,
-        hooks,
-      );
+      // 3. ワークフロー実行
+      // TODO: 将来のLLM統合時にサブエージェントとフックを使用
+      const result = await this.executeWorkflow(run.id, config);
 
       // ログ記録: 実行終了
       if (result.success) {
@@ -194,8 +178,6 @@ export class ResearchWorkflow {
   private async executeWorkflow(
     runId: string,
     config: ResearchConfig,
-    _agents: Record<string, unknown>,
-    _hooks: unknown,
   ): Promise<ResearchResult> {
     const { topic, depth = "normal", language = "ja" } = config;
 

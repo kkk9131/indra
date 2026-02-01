@@ -333,6 +333,10 @@ export class ReportPageElement extends LitElement {
     this.loadReports();
   }
 
+  private getErrorMessage(err: unknown, fallback: string): string {
+    return err instanceof Error ? err.message : fallback;
+  }
+
   private async loadReports(): Promise<void> {
     this.loading = true;
     this.error = null;
@@ -340,8 +344,7 @@ export class ReportPageElement extends LitElement {
     try {
       this.reports = await wsClient.reportsList();
     } catch (err) {
-      this.error =
-        err instanceof Error ? err.message : "Failed to load reports";
+      this.error = this.getErrorMessage(err, "Failed to load reports");
     } finally {
       this.loading = false;
     }
@@ -356,8 +359,7 @@ export class ReportPageElement extends LitElement {
     try {
       this.reports = await wsClient.reportsList();
     } catch (err) {
-      this.error =
-        err instanceof Error ? err.message : "Failed to refresh reports";
+      this.error = this.getErrorMessage(err, "Failed to refresh reports");
     } finally {
       this.refreshing = false;
     }
@@ -370,7 +372,7 @@ export class ReportPageElement extends LitElement {
     try {
       this.selectedReport = await wsClient.reportsGet(report.id);
     } catch (err) {
-      this.error = err instanceof Error ? err.message : "Failed to load report";
+      this.error = this.getErrorMessage(err, "Failed to load report");
     } finally {
       this.loading = false;
     }
