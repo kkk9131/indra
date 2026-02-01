@@ -2,6 +2,49 @@
 
 ---
 
+## 2026-02-02 00:05 [IMPL] SubagentRegistryハイブリッドアーキテクチャ実装
+
+### 実装内容
+
+- [IMPL] `src/orchestrator/agents/subagent/` 共通基盤
+  - `types.ts`: SubagentRun, XPostCheckpoint, シリアライズ関数
+  - `checkpoint.ts`: CheckpointStore（JSON永続化）
+  - `run-registry.ts`: RunRegistry（実行状態追跡）
+  - `hooks.ts`: SDK PostToolUse/Stop フック統合
+- [IMPL] `src/orchestrator/agents/x-operations/` X運用エージェント
+  - `agents.ts`: サブエージェント定義
+  - `skills-loader.ts`: .claude/skills/読み込み
+  - `workflow.ts`: XOperationsWorkflow
+  - `idempotency.ts`: 冪等性管理（二重投稿防止）
+- [TEST] `run-registry.test.ts`, `idempotency.test.ts` 追加
+- [DOCS] ドキュメント7件更新（architecture, skills, CLAUDE.md等）
+- [DOCS] `agent-output/log/20260201-hybrid-subagent-architecture.md` メリデメ分析
+
+### 成功
+
+- ビルド通過: `pnpm build` エラーなし
+- テスト通過: 53 passed / 13 skipped（新規18テスト追加）
+- LLMディベート結論（Gemini/Codex/GLM全員一致）を反映
+
+### 学び
+
+- **SDKの`resume`は会話復元であり、タスク状態復元ではない**
+  - SDKセッションは「計算資源」として使い捨て可能に設計
+  - 「真実」（復旧可能な状態）は`data/runs/`に自前で永続化
+- 既存実装（XPostWorkflowService）との並存設計で段階的移行が可能
+
+### 削除ファイル
+
+- `.claude/subagents/` → `.claude/agents/`に統合
+- `.claude/context-phase1.md` → 古いコンテキスト
+- `debate/` → LLMディベート結果（参照不要）
+
+### 関連コミット
+
+`9d727c9 feat(agents): add SubagentRegistry hybrid architecture for X operations`
+
+---
+
 ## 2026-01-31 06:43 [REFACTOR] ディレクトリ再編と運用ドキュメント整備
 
 ### 実装内容
