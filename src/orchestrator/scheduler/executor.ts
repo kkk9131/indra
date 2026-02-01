@@ -47,7 +47,7 @@ export class TaskExecutor {
       console.log(
         `TaskExecutor: Executing task "${task.name}" (${task.taskType})`,
       );
-      await definition.execute();
+      await definition.execute(task.config);
       result.success = true;
       result.duration = Date.now() - startTime;
 

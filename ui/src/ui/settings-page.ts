@@ -48,8 +48,19 @@ interface ScheduledTask {
   enabled: boolean;
   lastRunAt?: string;
   nextRunAt?: string;
+  config?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+}
+
+interface ConfigFieldDefinition {
+  key: string;
+  label: string;
+  type: "text" | "textarea" | "number" | "select" | "boolean";
+  placeholder?: string;
+  required?: boolean;
+  options?: Array<{ value: string; label: string }>;
+  defaultValue?: unknown;
 }
 
 interface TaskTypeDefinition {
@@ -57,6 +68,7 @@ interface TaskTypeDefinition {
   name: string;
   description: string;
   defaultCron?: string;
+  configSchema?: ConfigFieldDefinition[];
 }
 
 interface XAccountConfig {
@@ -593,6 +605,7 @@ export class SettingsPageElement extends LitElement {
     description: "",
     taskType: "",
     cronExpression: "",
+    config: {} as Record<string, unknown>,
   };
 
   @state()
@@ -817,12 +830,19 @@ export class SettingsPageElement extends LitElement {
   private async createTask(): Promise<void> {
     try {
       this.loading = true;
+      // configからundefinedや空文字のキーを除去
+      const config = Object.fromEntries(
+        Object.entries(this.taskForm.config).filter(
+          ([_, v]) => v !== undefined && v !== "",
+        ),
+      );
       const result = (await this.sendRequest("schedule.create", {
         name: this.taskForm.name,
         description: this.taskForm.description || undefined,
         taskType: this.taskForm.taskType,
         cronExpression: this.taskForm.cronExpression,
         enabled: true,
+        config: Object.keys(config).length > 0 ? config : undefined,
       })) as { task: ScheduledTask };
       this.scheduledTasks = [...this.scheduledTasks, result.task];
       this.resetTaskForm();
@@ -838,11 +858,18 @@ export class SettingsPageElement extends LitElement {
     if (!this.editingTaskId) return;
     try {
       this.loading = true;
+      // configからundefinedや空文字のキーを除去
+      const config = Object.fromEntries(
+        Object.entries(this.taskForm.config).filter(
+          ([_, v]) => v !== undefined && v !== "",
+        ),
+      );
       const result = (await this.sendRequest("schedule.update", {
         id: this.editingTaskId,
         name: this.taskForm.name,
         description: this.taskForm.description || undefined,
         cronExpression: this.taskForm.cronExpression,
+        config: Object.keys(config).length > 0 ? config : undefined,
       })) as { task: ScheduledTask };
       this.scheduledTasks = this.scheduledTasks.map((t) =>
         t.id === result.task.id ? result.task : t,
@@ -901,6 +928,7 @@ export class SettingsPageElement extends LitElement {
       description: task.description ?? "",
       taskType: task.taskType,
       cronExpression: task.cronExpression,
+      config: task.config ?? {},
     };
     this.showTaskForm = true;
   }
@@ -908,11 +936,21 @@ export class SettingsPageElement extends LitElement {
   private startCreateTask(): void {
     this.editingTaskId = null;
     const defaultType = this.taskTypes[0];
+    // デフォルト値を適用
+    const defaultConfig: Record<string, unknown> = {};
+    if (defaultType?.configSchema) {
+      for (const field of defaultType.configSchema) {
+        if (field.defaultValue !== undefined) {
+          defaultConfig[field.key] = field.defaultValue;
+        }
+      }
+    }
     this.taskForm = {
       name: "",
       description: "",
       taskType: defaultType?.type ?? "",
       cronExpression: defaultType?.defaultCron ?? "0 * * * *",
+      config: defaultConfig,
     };
     this.showTaskForm = true;
   }
@@ -925,6 +963,7 @@ export class SettingsPageElement extends LitElement {
       description: "",
       taskType: "",
       cronExpression: "",
+      config: {},
     };
   }
 
@@ -939,10 +978,20 @@ export class SettingsPageElement extends LitElement {
   private handleTaskTypeChange(e: Event): void {
     const select = e.target as HTMLSelectElement;
     const type = this.taskTypes.find((t) => t.type === select.value);
+    // 新しいタスクタイプのデフォルト値を適用
+    const defaultConfig: Record<string, unknown> = {};
+    if (type?.configSchema) {
+      for (const field of type.configSchema) {
+        if (field.defaultValue !== undefined) {
+          defaultConfig[field.key] = field.defaultValue;
+        }
+      }
+    }
     this.taskForm = {
       ...this.taskForm,
       taskType: select.value,
       cronExpression: type?.defaultCron ?? this.taskForm.cronExpression,
+      config: defaultConfig,
     };
   }
 
@@ -1545,6 +1594,8 @@ export class SettingsPageElement extends LitElement {
           </div>
         </div>
 
+        ${this.renderConfigFields()}
+
         <div class="task-form-actions">
           <button
             class="btn"
@@ -1561,6 +1612,159 @@ export class SettingsPageElement extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  private renderConfigFields() {
+    const taskType = this.taskTypes.find(
+      (t) => t.type === this.taskForm.taskType,
+    );
+    if (!taskType?.configSchema || taskType.configSchema.length === 0) {
+      return "";
+    }
+
+    return html`
+      <div
+        class="form-group"
+        style="border-top: 1px solid var(--border, #e0e0e0); padding-top: 16px; margin-top: 16px;"
+      >
+        <label style="font-size: 16px; margin-bottom: 12px;"
+          >タスク固有設定</label
+        >
+        ${taskType.configSchema.map((field) => this.renderConfigField(field))}
+      </div>
+    `;
+  }
+
+  private renderConfigField(field: ConfigFieldDefinition) {
+    const value = this.taskForm.config[field.key] ?? field.defaultValue ?? "";
+
+    switch (field.type) {
+      case "text":
+        return html`
+          <div class="form-group">
+            <label
+              >${field.label}${field.required
+                ? html`<span style="color: #c62828">*</span>`
+                : ""}</label
+            >
+            <input
+              type="text"
+              .value="${String(value)}"
+              placeholder="${field.placeholder ?? ""}"
+              @input="${(e: Event) => {
+                this.taskForm = {
+                  ...this.taskForm,
+                  config: {
+                    ...this.taskForm.config,
+                    [field.key]: (e.target as HTMLInputElement).value,
+                  },
+                };
+              }}"
+            />
+          </div>
+        `;
+
+      case "textarea":
+        return html`
+          <div class="form-group">
+            <label
+              >${field.label}${field.required
+                ? html`<span style="color: #c62828">*</span>`
+                : ""}</label
+            >
+            <textarea
+              .value="${String(value)}"
+              placeholder="${field.placeholder ?? ""}"
+              @input="${(e: Event) => {
+                this.taskForm = {
+                  ...this.taskForm,
+                  config: {
+                    ...this.taskForm.config,
+                    [field.key]: (e.target as HTMLTextAreaElement).value,
+                  },
+                };
+              }}"
+            ></textarea>
+          </div>
+        `;
+
+      case "number":
+        return html`
+          <div class="form-group">
+            <label
+              >${field.label}${field.required
+                ? html`<span style="color: #c62828">*</span>`
+                : ""}</label
+            >
+            <input
+              type="number"
+              .value="${String(value)}"
+              placeholder="${field.placeholder ?? ""}"
+              @input="${(e: Event) => {
+                this.taskForm = {
+                  ...this.taskForm,
+                  config: {
+                    ...this.taskForm.config,
+                    [field.key]: Number((e.target as HTMLInputElement).value),
+                  },
+                };
+              }}"
+            />
+          </div>
+        `;
+
+      case "select":
+        return html`
+          <div class="form-group">
+            <label
+              >${field.label}${field.required
+                ? html`<span style="color: #c62828">*</span>`
+                : ""}</label
+            >
+            <select
+              .value="${String(value)}"
+              @change="${(e: Event) => {
+                this.taskForm = {
+                  ...this.taskForm,
+                  config: {
+                    ...this.taskForm.config,
+                    [field.key]: (e.target as HTMLSelectElement).value,
+                  },
+                };
+              }}"
+            >
+              ${field.options?.map(
+                (opt) =>
+                  html`<option value="${opt.value}">${opt.label}</option>`,
+              )}
+            </select>
+          </div>
+        `;
+
+      case "boolean":
+        return html`
+          <div class="list-item" style="margin-bottom: 12px;">
+            <div class="list-item-info">
+              <div class="list-item-title">${field.label}</div>
+            </div>
+            <div
+              class="switch ${value ? "active" : ""}"
+              @click="${() => {
+                this.taskForm = {
+                  ...this.taskForm,
+                  config: {
+                    ...this.taskForm.config,
+                    [field.key]: !value,
+                  },
+                };
+              }}"
+            ></div>
+          </div>
+        `;
+
+      default:
+        return "";
+    }
   }
 
   private renderSourcesTab() {

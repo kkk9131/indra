@@ -2,9 +2,15 @@ import { Hono } from "hono";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 import { createServer, type Server } from "http";
-import { SessionManager, TranscriptManager } from "../../platform/infra/index.js";
+import {
+  SessionManager,
+  TranscriptManager,
+} from "../../platform/infra/index.js";
 import { ConfigManager, type Config } from "../../platform/config/index.js";
-import { AgentSDKProvider, type LLMProvider } from "../../orchestrator/llm/index.js";
+import {
+  AgentSDKProvider,
+  type LLMProvider,
+} from "../../orchestrator/llm/index.js";
 import {
   FrameSchema,
   createResponse,
@@ -23,7 +29,11 @@ import {
 } from "./services/index.js";
 import { ApprovalQueue } from "../../platform/approval/index.js";
 import { XConnector, type Platform } from "../../integrations/index.js";
-import { NewsStore, NewsScheduler, NewsSourceStore } from "../../capabilities/content/news/index.js";
+import {
+  NewsStore,
+  NewsScheduler,
+  NewsSourceStore,
+} from "../../capabilities/content/news/index.js";
 import {
   XOAuth2Handler,
   getCredentialStore,
@@ -62,6 +72,7 @@ import {
   type TaskExecutionResult,
 } from "../../orchestrator/scheduler/index.js";
 import { XPostWorkflowService } from "../../capabilities/social/x/index.js";
+import { researchWorkflow } from "../../orchestrator/agents/research/index.js";
 import {
   MemoryStore,
   MemorySearch,
@@ -407,6 +418,62 @@ export class GatewayServer {
         "0 6 * * *",
       );
     }
+
+    // research-report タスクを登録
+    this.schedulerManager.registerTaskType({
+      type: "research-report",
+      name: "リサーチレポート",
+      description: "指定トピックのリサーチレポートを生成",
+      execute: async (config?: Record<string, unknown>) => {
+        const topic = (config?.topic as string) || "AIエージェント最新動向";
+        const depth =
+          (config?.depth as "quick" | "normal" | "deep") || "normal";
+        const language = (config?.language as "ja" | "en") || "ja";
+
+        const result = await researchWorkflow.execute({
+          topic,
+          depth,
+          language,
+        });
+
+        if (!result.success) {
+          throw new Error(result.error || "Research workflow failed");
+        }
+
+        console.log(`Research report generated: ${result.outputPath}`);
+      },
+      defaultCron: "0 7 * * *",
+      configSchema: [
+        {
+          key: "topic",
+          label: "調査トピック",
+          type: "text",
+          placeholder: "例: AIエージェント最新動向",
+          required: true,
+        },
+        {
+          key: "depth",
+          label: "調査深度",
+          type: "select",
+          options: [
+            { value: "quick", label: "クイック" },
+            { value: "normal", label: "標準" },
+            { value: "deep", label: "詳細" },
+          ],
+          defaultValue: "normal",
+        },
+        {
+          key: "language",
+          label: "レポート言語",
+          type: "select",
+          options: [
+            { value: "ja", label: "日本語" },
+            { value: "en", label: "English" },
+          ],
+          defaultValue: "ja",
+        },
+      ],
+    });
 
     // スケジューラーを開始
     this.schedulerManager.start();

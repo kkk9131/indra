@@ -98,6 +98,7 @@ pnpm lint             # リント
 ### ログ・分析・レポート
 
 - log-read / log-analyze / glm-analyze / report-generate
+- research-report: リサーチレポート作成
 
 ### ブラウザ自動化
 
@@ -107,6 +108,8 @@ pnpm lint             # リント
 
 - x-operations-agent: `.claude/agents/x-operations-agent.md`
   → X運用統括（ポスト作成・評価・改善・分析）
+- research-agent: `.claude/agents/research-agent.md`
+  → リサーチレポート作成（トピック調査・レポート生成）
 - general-purpose-agent: `.claude/agents/general-purpose-agent.md`
   → 汎用エージェント
 

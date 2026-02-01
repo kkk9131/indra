@@ -43,14 +43,28 @@ export interface UpdateTaskParams {
 }
 
 /**
+ * タスク固有設定のフィールド定義
+ */
+export interface ConfigFieldDefinition {
+  key: string;
+  label: string;
+  type: "text" | "textarea" | "number" | "select" | "boolean";
+  placeholder?: string;
+  required?: boolean;
+  options?: Array<{ value: string; label: string }>;
+  defaultValue?: unknown;
+}
+
+/**
  * タスク定義（レジストリに登録する形式）
  */
 export interface TaskDefinition {
   type: string;
   name: string;
   description: string;
-  execute: () => Promise<void>;
+  execute: (config?: Record<string, unknown>) => Promise<void>;
   defaultCron?: string;
+  configSchema?: ConfigFieldDefinition[];
 }
 
 /**

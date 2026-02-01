@@ -27,7 +27,7 @@ export interface NotificationData {
 
 // Task intent for message-based task execution (Phase 3)
 export interface TaskIntent {
-  type: "post" | "chat" | "unknown";
+  type: "post" | "chat" | "research" | "unknown";
   platform?: "x" | "discord";
   prompt: string;
   raw: string;

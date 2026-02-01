@@ -125,6 +125,7 @@ export function handleScheduleTaskTypes(
     name: def.name,
     description: def.description,
     defaultCron: def.defaultCron,
+    configSchema: def.configSchema,
   }));
   ctx.sendSuccess(ws, frame.id, { taskTypes });
 }
