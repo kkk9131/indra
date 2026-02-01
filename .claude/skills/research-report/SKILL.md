@@ -5,7 +5,7 @@ configSchema:
   - key: topic
     label: 調査トピック
     type: text
-    placeholder: 例: AIエージェント最新動向
+    placeholder: "例: AIエージェント最新動向"
     required: true
   - key: depth
     label: 調査深度

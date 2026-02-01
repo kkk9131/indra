@@ -1,4 +1,7 @@
-import type { CredentialStore, XOAuth2Handler } from "../../../platform/auth/index.js";
+import type {
+  CredentialStore,
+  XOAuth2Handler,
+} from "../../../platform/auth/index.js";
 import type { XConnector } from "../../../integrations/index.js";
 import type { DiscordBot } from "../../discord/index.js";
 

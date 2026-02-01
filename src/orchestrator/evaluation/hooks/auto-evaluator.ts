@@ -7,7 +7,10 @@ import { DEFAULT_AUTO_EVALUATOR_CONFIG } from "./types.js";
 import type { EvaluationStore } from "../store.js";
 import type { Task, TaskType } from "../types.js";
 import { GLMGrader } from "../graders/glm-grader.js";
-import type { OutcomeType, OutcomeContent } from "../../../platform/logs/types.js";
+import type {
+  OutcomeType,
+  OutcomeContent,
+} from "../../../platform/logs/types.js";
 
 const OUTCOME_TYPE_TO_TASK_TYPE: Record<OutcomeType, TaskType> = {
   xpost: "xpost",

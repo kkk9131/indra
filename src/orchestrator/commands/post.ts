@@ -3,7 +3,10 @@ import * as p from "@clack/prompts";
 import chalk from "chalk";
 import { WSClient } from "../../channels/cli/ws-client.js";
 import type { Platform } from "../../integrations/types.js";
-import type { ApprovalStatus, ApprovalItem } from "../../platform/approval/types.js";
+import type {
+  ApprovalStatus,
+  ApprovalItem,
+} from "../../platform/approval/types.js";
 
 const DEFAULT_GATEWAY_URL = "ws://localhost:3001";
 

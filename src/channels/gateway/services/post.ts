@@ -4,9 +4,15 @@ import {
   type Content,
   type Platform,
 } from "../../../integrations/index.js";
-import type { CredentialStore, XOAuth2Handler } from "../../../platform/auth/index.js";
+import type {
+  CredentialStore,
+  XOAuth2Handler,
+} from "../../../platform/auth/index.js";
 import type { ApprovalItem } from "../../../platform/approval/types.js";
-import type { ApprovalQueue, ApprovalStatus } from "../../../platform/approval/index.js";
+import type {
+  ApprovalQueue,
+  ApprovalStatus,
+} from "../../../platform/approval/index.js";
 import type { LLMProvider } from "../../../orchestrator/llm/index.js";
 
 export type PostApproveResult =

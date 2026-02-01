@@ -140,7 +140,8 @@ export function registerDiscordCommand(cli: Command): void {
         return;
       }
 
-      const { DiscordConnector } = await import("../../integrations/discord.js");
+      const { DiscordConnector } =
+        await import("../../integrations/discord.js");
       const connector = new DiscordConnector({ token });
 
       const s = p.spinner();

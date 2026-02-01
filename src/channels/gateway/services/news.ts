@@ -1,4 +1,7 @@
-import type { NewsScheduler, NewsStore } from "../../../capabilities/content/news/index.js";
+import type {
+  NewsScheduler,
+  NewsStore,
+} from "../../../capabilities/content/news/index.js";
 import type { NewsArticle } from "../../../capabilities/content/news/types.js";
 
 export interface NewsService {

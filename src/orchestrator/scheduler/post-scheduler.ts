@@ -1,5 +1,8 @@
 import cron from "node-cron";
-import type { ApprovalQueue, ApprovalItem } from "../../platform/approval/index.js";
+import type {
+  ApprovalQueue,
+  ApprovalItem,
+} from "../../platform/approval/index.js";
 import type { CredentialStore } from "../../platform/auth/index.js";
 import { XConnector } from "../../integrations/index.js";
 

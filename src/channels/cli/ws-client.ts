@@ -5,7 +5,10 @@ import {
   type EventFrame,
 } from "../gateway/protocol/frame.js";
 import type { Message } from "../../orchestrator/llm/types.js";
-import type { ApprovalItem, ApprovalStatus } from "../../platform/approval/types.js";
+import type {
+  ApprovalItem,
+  ApprovalStatus,
+} from "../../platform/approval/types.js";
 import type { Platform, Content } from "../../integrations/types.js";
 
 export interface WSClientOptions {
