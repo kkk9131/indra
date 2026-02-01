@@ -40,6 +40,7 @@ import {
   type CredentialStore,
 } from "../../platform/auth/index.js";
 import { DiscordBot, commands as discordCommands } from "../discord/index.js";
+import { SlackBot } from "../slack/index.js";
 import {
   LogStore,
   LogCollector,
@@ -169,6 +170,7 @@ export class GatewayServer {
   private xOAuth2Handler: XOAuth2Handler | null = null;
   private credentialStore: CredentialStore;
   private discordBot: DiscordBot | null = null;
+  private slackBot: SlackBot | null = null;
   private newsStore: NewsStore;
   private newsSourceStore: NewsSourceStore;
   private newsScheduler: NewsScheduler;
@@ -247,8 +249,10 @@ export class GatewayServer {
     this.initConnectors();
     this.initOAuth2();
     this.initDiscordBot();
+    this.initSlackBot();
     this.initAnalytics();
     this.initScheduledTasks();
+    this.initResearchWorkflowLogs();
     this.services = createGatewayServices({
       configManager: this.configManager,
       approvalQueue: this.approvalQueue,
@@ -480,6 +484,15 @@ export class GatewayServer {
     console.log("SchedulerManager: Initialized and started");
   }
 
+  private initResearchWorkflowLogs(): void {
+    researchWorkflow.setLogCallbacks({
+      saveExecutionLog: (executionId, action, params) =>
+        this.saveExecutionLog(executionId, action, params),
+      saveOutcomeLog: (...args) => this.saveOutcomeLog(...args),
+    });
+    console.log("ResearchWorkflow: Log callbacks configured");
+  }
+
   private handleTaskExecuted(result: TaskExecutionResult): void {
     this.broadcast("schedule.executed", {
       id: result.taskId,
@@ -599,6 +612,40 @@ export class GatewayServer {
       // Set gateway reference for commands to use
       this.discordBot.setGateway(this);
     }
+  }
+
+  private initSlackBot(): void {
+    const botToken = process.env.SLACK_BOT_TOKEN;
+    const appToken = process.env.SLACK_APP_TOKEN;
+    const signingSecret = process.env.SLACK_SIGNING_SECRET;
+
+    if (botToken && appToken) {
+      this.slackBot = new SlackBot({
+        botToken,
+        appToken,
+        signingSecret,
+      });
+
+      // Set gateway reference for message handler to use
+      this.slackBot.setGateway(this);
+    }
+  }
+
+  async startSlackBot(): Promise<void> {
+    if (this.slackBot) {
+      await this.slackBot.start();
+      console.log("Slack bot started");
+    }
+  }
+
+  async stopSlackBot(): Promise<void> {
+    if (this.slackBot) {
+      await this.slackBot.stop();
+    }
+  }
+
+  isSlackBotReady(): boolean {
+    return this.slackBot?.isReady() ?? false;
   }
 
   async startDiscordBot(): Promise<void> {
@@ -856,6 +903,7 @@ export class GatewayServer {
     this.newsSourceStore.close();
     this.memoryStore?.close();
     this.evaluationStore.close();
+    this.slackBot?.stop();
     this.wss.close();
     this.httpServer.close();
     this.sessionManager.close();

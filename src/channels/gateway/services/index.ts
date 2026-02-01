@@ -1,6 +1,9 @@
 import type { Config, ConfigManager } from "../../../platform/config/index.js";
 import type { ApprovalQueue } from "../../../platform/approval/index.js";
-import type { CredentialStore, XOAuth2Handler } from "../../../platform/auth/index.js";
+import type {
+  CredentialStore,
+  XOAuth2Handler,
+} from "../../../platform/auth/index.js";
 import type { XConnector } from "../../../integrations/index.js";
 import type { DiscordBot } from "../../discord/index.js";
 import type { LLMProvider } from "../../../orchestrator/llm/index.js";
@@ -34,14 +37,19 @@ import {
 import { createSessionService, type SessionService } from "./session.js";
 import { createMemoryService, type MemoryService } from "./memory.js";
 import { EvaluationService } from "./evaluation.js";
-import type { SessionManager, TranscriptManager } from "../../../platform/infra/index.js";
+import type {
+  SessionManager,
+  TranscriptManager,
+} from "../../../platform/infra/index.js";
 import type {
   MemoryStore,
   MemorySearch,
   MemoryIndexer,
 } from "../../../platform/memory/index.js";
+import { createReportsService, type ReportsService } from "./reports.js";
 
 export type { EvaluationService } from "./evaluation.js";
+export type { ReportsService, ReportSummary, ReportDetail } from "./reports.js";
 
 export type { AgentLogParams } from "./chat.js";
 export type { PostApproveResult } from "./post.js";
@@ -66,6 +74,7 @@ export interface GatewayServices {
   session: SessionService;
   memory: MemoryService;
   evaluation: EvaluationService;
+  reports: ReportsService;
 }
 
 interface GatewayServiceDeps {
@@ -158,6 +167,8 @@ export function createGatewayServices(
 
   const evaluation = new EvaluationService();
 
+  const reports = createReportsService();
+
   return {
     config,
     chat,
@@ -172,6 +183,7 @@ export function createGatewayServices(
     session,
     memory: memory!,
     evaluation,
+    reports,
     discordIntegration: createDiscordIntegrationService({
       chat,
       post,

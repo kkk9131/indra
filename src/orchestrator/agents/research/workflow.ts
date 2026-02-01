@@ -9,6 +9,37 @@ import {
   createRegistryHooksWithErrorHandling,
 } from "../subagent/index.js";
 import { createResearchAgents, toSDKAgentFormat } from "./agents.js";
+import type {
+  OutcomeType,
+  OutcomeStage,
+  OutcomeContent,
+  ExecutionConfig,
+  ExecutionResult,
+  ExecutionError,
+} from "../../../platform/logs/index.js";
+
+/**
+ * ログ記録用のコールバック型
+ */
+export interface ResearchLogCallbacks {
+  saveExecutionLog: (
+    executionId: string,
+    action: "start" | "end" | "error",
+    params: {
+      config?: ExecutionConfig;
+      input?: string;
+      result?: ExecutionResult;
+      error?: ExecutionError;
+    },
+  ) => void;
+  saveOutcomeLog: (
+    outcomeId: string,
+    executionId: string,
+    outcomeType: OutcomeType,
+    stage: OutcomeStage,
+    content: OutcomeContent,
+  ) => void;
+}
 
 export type ResearchPhase =
   | "collecting"
@@ -45,7 +76,16 @@ export interface ResearchResult {
 }
 
 export class ResearchWorkflow {
+  private logCallbacks: ResearchLogCallbacks | null = null;
+
   constructor(private registry: RunRegistry) {}
+
+  /**
+   * ログ記録コールバックを設定
+   */
+  setLogCallbacks(callbacks: ResearchLogCallbacks): void {
+    this.logCallbacks = callbacks;
+  }
 
   /**
    * リサーチを実行
@@ -61,6 +101,17 @@ export class ResearchWorkflow {
         topic,
         depth,
         language,
+      });
+
+      // ログ記録: 実行開始
+      this.logCallbacks?.saveExecutionLog(run.id, "start", {
+        config: {
+          model: "research-agent",
+          maxTurns: 10,
+          tools: ["web_search", "read_file"],
+          permissionMode: "auto",
+        },
+        input: `topic=${topic}, depth=${depth}, language=${language}`,
       });
 
       // 2. チェックポイント初期化
@@ -92,10 +143,43 @@ export class ResearchWorkflow {
         hooks,
       );
 
+      // ログ記録: 実行終了
+      if (result.success) {
+        this.logCallbacks?.saveExecutionLog(run.id, "end", {
+          result: {
+            success: true,
+            totalTurns: 1,
+            totalTokens: 0,
+            duration: 0,
+          },
+        });
+
+        // ログ記録: レポート成果物
+        const outcomeId = crypto.randomUUID();
+        this.logCallbacks?.saveOutcomeLog(
+          outcomeId,
+          run.id,
+          "report",
+          "final",
+          {
+            report: {
+              title: topic,
+              summary: `Research report generated: ${result.outputPath}`,
+            },
+          },
+        );
+      }
+
       return result;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
+
+      // ログ記録: エラー
+      this.logCallbacks?.saveExecutionLog("research-error", "error", {
+        error: { code: "RESEARCH_ERROR", message: errorMessage },
+      });
+
       return {
         success: false,
         runId: "",

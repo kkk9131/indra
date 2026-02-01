@@ -52,7 +52,9 @@ export interface NewsArticle {
     | "blog"
     | "log-analysis"
     | "x-account"
-    | "github-changelog";
+    | "github-changelog"
+    | "indra-log"
+    | "news-report";
   title: string;
   summary: string | null;
   url: string;
@@ -590,6 +592,24 @@ export class WSClientService extends EventTarget {
     }
     return res.payload as { available: boolean };
   }
+
+  // ===== Reports API Methods =====
+
+  async reportsList(): Promise<ReportSummary[]> {
+    const res = await this.sendRequest("reports.list", {});
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to list reports");
+    }
+    return (res.payload as { reports: ReportSummary[] }).reports;
+  }
+
+  async reportsGet(id: string): Promise<ReportDetail> {
+    const res = await this.sendRequest("reports.get", { id });
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to get report");
+    }
+    return (res.payload as { report: ReportDetail }).report;
+  }
 }
 
 // ===== Evaluation Types =====
@@ -641,6 +661,20 @@ export interface EvalMetrics {
   averageScore: number;
   averageDuration?: number | null;
   calculatedAt: string;
+}
+
+// ===== Reports Types =====
+
+export interface ReportSummary {
+  id: string;
+  topic: string;
+  date: string;
+  path: string;
+  size: number;
+}
+
+export interface ReportDetail extends ReportSummary {
+  content: string;
 }
 
 // Singleton instance

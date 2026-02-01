@@ -68,6 +68,7 @@ import {
   handleEvalMetrics,
   handleEvalGraderStatus,
 } from "./evaluation.js";
+import { handleReportsList, handleReportsGet } from "./reports.js";
 import type { GatewayContext, RequestHandler } from "./context.js";
 
 export type { GatewayContext, RequestHandler } from "./context.js";
@@ -155,6 +156,13 @@ export function createHandlerRegistry(
 
   const evaluationCtx = {
     evaluation: ctx.services.evaluation,
+    sendSuccess: ctx.sendSuccess,
+    sendError: ctx.sendError,
+    getErrorMessage: ctx.getErrorMessage,
+  };
+
+  const reportsCtx = {
+    reports: ctx.services.reports,
     sendSuccess: ctx.sendSuccess,
     sendError: ctx.sendError,
     getErrorMessage: ctx.getErrorMessage,
@@ -350,5 +358,8 @@ export function createHandlerRegistry(
       "eval.grader.status",
       (ws, frame) => handleEvalGraderStatus(evaluationCtx, ws, frame),
     ],
+    // Reports handlers
+    ["reports.list", (ws, frame) => handleReportsList(reportsCtx, ws, frame)],
+    ["reports.get", (ws, frame) => handleReportsGet(reportsCtx, ws, frame)],
   ]);
 }

@@ -23,6 +23,7 @@ export {
   type ResearchCheckpoint,
   type ResearchConfig,
   type ResearchResult,
+  type ResearchLogCallbacks,
 } from "./workflow.js";
 
 import { runRegistry } from "../subagent/index.js";
