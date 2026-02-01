@@ -87,12 +87,10 @@ export async function createResearchAgents(
 export function toSDKAgentFormat(
   agents: Record<string, ResearchAgentDefinition>,
 ): Record<string, Omit<ResearchAgentDefinition, "name">> {
-  const result: Record<string, Omit<ResearchAgentDefinition, "name">> = {};
-
-  for (const [key, agent] of Object.entries(agents)) {
-    const { name: _name, ...rest } = agent;
-    result[key] = rest;
-  }
-
-  return result;
+  return Object.fromEntries(
+    Object.entries(agents).map(([key, { name: _name, ...rest }]) => [
+      key,
+      rest,
+    ]),
+  );
 }

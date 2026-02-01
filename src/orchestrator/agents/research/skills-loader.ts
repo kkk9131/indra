@@ -30,26 +30,19 @@ async function loadSkillFile(skillDir: string): Promise<string | null> {
 /**
  * スキル定義をパース
  */
-function parseSkillContent(
-  name: string,
-  content: string,
-): SkillDefinition | null {
+function parseSkillContent(name: string, content: string): SkillDefinition {
   const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
-  let description = `Skill: ${name}`;
+  const defaultDescription = `Skill: ${name}`;
 
-  if (frontmatterMatch) {
-    const frontmatter = frontmatterMatch[1];
-    const descMatch = frontmatter.match(/description:\s*(.+)/);
-    if (descMatch) {
-      description = descMatch[1].trim();
-    }
+  if (!frontmatterMatch) {
+    return { name, description: defaultDescription, content };
   }
 
-  return {
-    name,
-    description,
-    content,
-  };
+  const frontmatter = frontmatterMatch[1];
+  const descMatch = frontmatter.match(/description:\s*(.+)/);
+  const description = descMatch ? descMatch[1].trim() : defaultDescription;
+
+  return { name, description, content };
 }
 
 /**
@@ -66,10 +59,7 @@ export async function loadResearchSkills(
     const content = await loadSkillFile(skillDir);
 
     if (content) {
-      const skill = parseSkillContent(skillName, content);
-      if (skill) {
-        skills.push(skill);
-      }
+      skills.push(parseSkillContent(skillName, content));
     }
   }
 

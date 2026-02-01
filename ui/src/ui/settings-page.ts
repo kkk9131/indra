@@ -1910,11 +1910,7 @@ export class SettingsPageElement extends LitElement {
           </div>
         </div>
 
-        ${this.sourceForm.sourceType === "x-account"
-          ? this.renderXAccountFields()
-          : this.sourceForm.sourceType === "github"
-            ? this.renderGitHubFields()
-            : ""}
+        ${this.renderSourceTypeFields()}
 
         <div class="task-form-actions">
           <button
@@ -1935,6 +1931,17 @@ export class SettingsPageElement extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  private renderSourceTypeFields() {
+    switch (this.sourceForm.sourceType) {
+      case "x-account":
+        return this.renderXAccountFields();
+      case "github":
+        return this.renderGitHubFields();
+      default:
+        return "";
+    }
   }
 
   private renderXAccountFields() {

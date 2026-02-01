@@ -51,7 +51,9 @@ export class ResearchWorkflow {
    * リサーチを実行
    */
   async execute(config: ResearchConfig): Promise<ResearchResult> {
-    const { topic, depth = "normal", language = "ja" } = config;
+    const { topic } = config;
+    const depth = config.depth ?? "normal";
+    const language = config.language ?? "ja";
 
     try {
       // 1. 実行開始を記録
@@ -157,23 +159,12 @@ export class ResearchWorkflow {
    * 検索クエリを生成
    */
   private generateSearchQueries(topic: string, language: string): string[] {
-    const queries: string[] = [];
+    const suffixes =
+      language === "ja"
+        ? ["", " 最新", " トレンド", " 解説"]
+        : ["", " latest", " trends", " explained"];
 
-    // 基本クエリ
-    queries.push(topic);
-
-    // 言語に応じたバリエーション
-    if (language === "ja") {
-      queries.push(`${topic} 最新`);
-      queries.push(`${topic} トレンド`);
-      queries.push(`${topic} 解説`);
-    } else {
-      queries.push(`${topic} latest`);
-      queries.push(`${topic} trends`);
-      queries.push(`${topic} explained`);
-    }
-
-    return queries;
+    return suffixes.map((suffix) => topic + suffix);
   }
 
   /**
