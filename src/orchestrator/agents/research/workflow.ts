@@ -4,10 +4,12 @@
  * トピックを調査してレポートを作成するワークフローを管理
  */
 
+import { promises as fs } from "fs";
 import { type RunRegistry } from "../subagent/index.js";
-// TODO: 将来のLLM統合時に使用
-// import { createRegistryHooksWithErrorHandling } from "../subagent/index.js";
-// import { createResearchAgents, toSDKAgentFormat } from "./agents.js";
+import { createResearchAgents } from "./agents.js";
+import { extractReportSummary } from "./utils.js";
+import type { LLMProvider } from "../../llm/index.js";
+import type { ResearchReport } from "../../analytics/discord-notifier.js";
 import type {
   OutcomeType,
   OutcomeStage,
@@ -38,6 +40,7 @@ export interface ResearchLogCallbacks {
     stage: OutcomeStage,
     content: OutcomeContent,
   ) => void;
+  notifyDiscord?: (report: ResearchReport) => Promise<void>;
 }
 
 export type ResearchPhase =
@@ -76,8 +79,16 @@ export interface ResearchResult {
 
 export class ResearchWorkflow {
   private logCallbacks: ResearchLogCallbacks | null = null;
+  private llmProvider: LLMProvider | null = null;
 
   constructor(private registry: RunRegistry) {}
+
+  /**
+   * LLMプロバイダーを設定
+   */
+  setLLMProvider(provider: LLMProvider): void {
+    this.llmProvider = provider;
+  }
 
   /**
    * ログ記録コールバックを設定
@@ -181,12 +192,39 @@ export class ResearchWorkflow {
   ): Promise<ResearchResult> {
     const { topic, depth = "normal", language = "ja" } = config;
 
+    if (!this.llmProvider?.chatStreamWithAgent) {
+      return {
+        success: false,
+        runId,
+        error: "LLM provider with agent support not configured",
+      };
+    }
+
+    // 出力パスを生成（絶対パスで指定）
+    const dateStr = new Date().toISOString().split("T")[0].replace(/-/g, "");
+    const safeTopic = topic
+      .replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, "-")
+      .slice(0, 30);
+    const baseDir = process.cwd();
+    const outputDir = `${baseDir}/agent-output/research-${dateStr}-${safeTopic}`;
+    const outputPath = `${outputDir}/report.md`;
+
     // Phase 1: Collecting
     await this.registry.updateCheckpoint(runId, { phase: "collecting" });
 
-    // 検索クエリ生成（仮実装）
-    const searchQueries = this.generateSearchQueries(topic, language);
-    await this.registry.updateCheckpoint(runId, { searchQueries });
+    // エージェント定義を取得（agents.ts から）
+    const agents = await createResearchAgents();
+    const agentDef = agents["research-agent"];
+
+    // Agent SDK で research-report スキルを呼び出し
+    const maxTurns = depth === "deep" ? 30 : depth === "quick" ? 10 : 20;
+    const langInstruction = language === "ja" ? "日本語で" : "in English";
+
+    const prompt = `research-report スキルを使って、${langInstruction}以下のトピックについてリサーチレポートを作成してください。
+出力先: ${outputPath}
+調査深度: ${depth}
+
+トピック: ${topic}`;
 
     // Phase 2: Analyzing
     await this.registry.updateCheckpoint(runId, { phase: "analyzing" });
@@ -199,12 +237,52 @@ export class ResearchWorkflow {
     // Phase 4: Generating
     await this.registry.updateCheckpoint(runId, { phase: "generating" });
 
-    // 出力パスを生成
-    const dateStr = new Date().toISOString().split("T")[0].replace(/-/g, "");
-    const safeTopic = topic
-      .replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, "-")
-      .slice(0, 30);
-    const outputPath = `agent-output/research-${dateStr}-${safeTopic}/report.md`;
+    // chatStreamWithAgent を使用（chat と同じ方式）
+    console.log(`[Research] Starting with prompt: ${prompt.slice(0, 100)}...`);
+    console.log(
+      `[Research] Agent tools: ${agentDef.tools?.join(", ") ?? "none"}`,
+    );
+    console.log(`[Research] maxTurns: ${maxTurns}`);
+
+    for await (const event of this.llmProvider.chatStreamWithAgent(
+      [{ role: "user", content: prompt }],
+      {
+        systemPrompt: agentDef.prompt,
+        agent: {
+          maxTurns,
+          tools: agentDef.tools,
+          permissionMode: "acceptEdits",
+        },
+      },
+    )) {
+      // すべてのイベントをログ出力
+      if (event.type === "tool_start") {
+        console.log(`[Research] Tool start: ${event.tool}`);
+      } else if (event.type === "tool_result") {
+        console.log(
+          `[Research] Tool result: ${event.tool} -> ${event.result.slice(0, 100)}...`,
+        );
+      } else if (event.type === "turn_complete") {
+        console.log(`[Research] Turn ${event.turnNumber} complete`);
+      } else if (event.type === "text") {
+        // テキストは省略（長すぎる）
+      } else if (event.type === "done") {
+        console.log(`[Research] Done: ${event.result.slice(0, 200)}...`);
+      } else if (event.type === "cancelled") {
+        console.log(`[Research] Cancelled: ${event.reason}`);
+      }
+    }
+
+    // ファイルが生成されたか確認
+    try {
+      await fs.access(outputPath);
+    } catch {
+      return {
+        success: false,
+        runId,
+        error: `Report file not created: ${outputPath}`,
+      };
+    }
 
     // Phase 5: Completed
     await this.registry.updateCheckpoint(runId, {
@@ -214,23 +292,32 @@ export class ResearchWorkflow {
 
     await this.registry.complete(runId);
 
+    // Discord通知（オプショナル）
+    if (this.logCallbacks?.notifyDiscord) {
+      try {
+        const summaryInfo = await extractReportSummary(outputPath);
+        await this.logCallbacks.notifyDiscord({
+          id: runId,
+          topic,
+          outputPath,
+          generatedAt: new Date().toISOString(),
+          summary: summaryInfo?.summary,
+          keyPoints: summaryInfo?.keyPoints,
+        });
+      } catch (error) {
+        // Discord通知の失敗はワークフロー全体を失敗させない
+        console.error(
+          "[Research] Discord notification failed:",
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
     return {
       success: true,
       runId,
       outputPath,
     };
-  }
-
-  /**
-   * 検索クエリを生成
-   */
-  private generateSearchQueries(topic: string, language: string): string[] {
-    const suffixes =
-      language === "ja"
-        ? ["", " 最新", " トレンド", " 解説"]
-        : ["", " latest", " trends", " explained"];
-
-    return suffixes.map((suffix) => topic + suffix);
   }
 
   /**

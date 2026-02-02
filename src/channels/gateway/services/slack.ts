@@ -3,7 +3,6 @@ import type { Platform } from "../../../integrations/index.js";
 import type { AuthService } from "./auth.js";
 import type { ChatService } from "./chat.js";
 import type { PostService } from "./post.js";
-import type { CredentialStore } from "../../../platform/auth/index.js";
 
 export interface SlackIntegrationService {
   chat: (prompt: string) => Promise<string>;
@@ -25,7 +24,6 @@ interface SlackIntegrationServiceDeps {
   chat: ChatService;
   post: PostService;
   auth: AuthService;
-  credentialStore: CredentialStore;
   isSlackBotReady: () => boolean;
   broadcast: (event: string, payload: unknown) => void;
 }

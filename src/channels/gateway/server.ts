@@ -60,8 +60,10 @@ import {
   NewsReportScheduler,
   createReportEmbed,
   createNewsReportEmbed,
+  createResearchReportEmbed,
   type DailyReport,
   type NewsReport,
+  type ResearchReport,
 } from "../../orchestrator/analytics/index.js";
 import type { NewsArticle } from "../../capabilities/content/news/types.js";
 import {
@@ -72,7 +74,7 @@ import {
   PostScheduler,
   type TaskExecutionResult,
 } from "../../orchestrator/scheduler/index.js";
-import { XPostWorkflowService } from "../../capabilities/social/x/index.js";
+import { RunRegistry } from "../../orchestrator/agents/subagent/index.js";
 import { researchWorkflow } from "../../orchestrator/agents/research/index.js";
 import {
   MemoryStore,
@@ -182,7 +184,7 @@ export class GatewayServer {
   private scheduleStore: ScheduleStore;
   private taskRegistry: TaskRegistry;
   private taskExecutor: TaskExecutor;
-  private xpostWorkflowService: XPostWorkflowService;
+  private runRegistry: RunRegistry;
   private postScheduler: PostScheduler;
   private memoryStore: MemoryStore | null = null;
   private memorySearch: MemorySearch | null = null;
@@ -238,7 +240,7 @@ export class GatewayServer {
       (task) => this.broadcast("schedule.updated", { task }),
     );
 
-    this.xpostWorkflowService = new XPostWorkflowService();
+    this.runRegistry = new RunRegistry();
 
     this.evaluationStore = new EvaluationStore();
     this.initEvaluationHooks();
@@ -253,6 +255,7 @@ export class GatewayServer {
     this.initAnalytics();
     this.initScheduledTasks();
     this.initResearchWorkflowLogs();
+    this.initResearchWorkflowLLM();
     this.services = createGatewayServices({
       configManager: this.configManager,
       approvalQueue: this.approvalQueue,
@@ -267,7 +270,7 @@ export class GatewayServer {
       logStore: this.logStore,
       analyticsScheduler: this.analyticsScheduler,
       schedulerManager: this.schedulerManager,
-      xpostWorkflowService: this.xpostWorkflowService,
+      runRegistry: this.runRegistry,
       sessionManager: this.sessionManager,
       transcriptManager: this.transcriptManager,
       memoryStore: this.memoryStore,
@@ -489,8 +492,17 @@ export class GatewayServer {
       saveExecutionLog: (executionId, action, params) =>
         this.saveExecutionLog(executionId, action, params),
       saveOutcomeLog: (...args) => this.saveOutcomeLog(...args),
+      notifyDiscord: async (report) => {
+        await this.sendResearchReportToDiscord(report);
+      },
     });
     console.log("ResearchWorkflow: Log callbacks configured");
+  }
+
+  private initResearchWorkflowLLM(): void {
+    const provider = this.createLLMProvider(this.configManager.get().llm);
+    researchWorkflow.setLLMProvider(provider);
+    console.log("ResearchWorkflow: LLM provider configured");
   }
 
   private handleTaskExecuted(result: TaskExecutionResult): void {
@@ -894,6 +906,77 @@ export class GatewayServer {
     pendingPosts: number;
   } {
     return this.services.discordIntegration.getStatus();
+  }
+
+  async researchForDiscord(topic: string): Promise<{
+    success: boolean;
+    outputPath?: string;
+    error?: string;
+  }> {
+    const result = await researchWorkflow.execute({
+      topic,
+      depth: "normal",
+      language: "ja",
+    });
+
+    // Discord reportチャンネルに通知
+    if (result.success && result.outputPath) {
+      await this.notifyResearchReport(topic, result.outputPath);
+    }
+
+    return result;
+  }
+
+  /**
+   * ResearchReport をDiscordに送信
+   * workflow.ts の notifyDiscord コールバックから呼び出される
+   */
+  private async sendResearchReportToDiscord(
+    report: ResearchReport,
+  ): Promise<void> {
+    const channelId = process.env.DISCORD_REPORT_CHANNEL_ID;
+    if (!channelId || !this.discordBot?.isReady()) {
+      return;
+    }
+
+    // Web UI URLを追加
+    const webUiUrl = `http://localhost:5173/reports/${report.id}`;
+    const enrichedReport = {
+      ...report,
+      webUiUrl,
+    };
+
+    const embed = createResearchReportEmbed(enrichedReport);
+    const result = await this.discordBot.sendEmbed(channelId, embed);
+    if (!result.success) {
+      console.error("Failed to send research report to Discord:", result.error);
+    }
+  }
+
+  /**
+   * @deprecated sendResearchReportToDiscord を使用してください
+   * researchForDiscord から呼び出される旧メソッド（後方互換性のため残す）
+   */
+  private async notifyResearchReport(
+    topic: string,
+    outputPath: string,
+  ): Promise<void> {
+    const channelId = process.env.DISCORD_REPORT_CHANNEL_ID;
+    if (!channelId || !this.discordBot?.isReady()) {
+      return;
+    }
+
+    const embed = createResearchReportEmbed({
+      id: crypto.randomUUID(),
+      topic,
+      outputPath,
+      generatedAt: new Date().toISOString(),
+    });
+
+    const result = await this.discordBot.sendEmbed(channelId, embed);
+    if (!result.success) {
+      console.error("Failed to send research report to Discord:", result.error);
+    }
   }
 
   stop(): void {

@@ -1,9 +1,34 @@
 import { App } from "@slack/bolt";
-import type { SlackBotConfig, NotificationData, SendResult } from "./types.js";
+import type {
+  SlackBotConfig,
+  NotificationData,
+  NotificationType,
+  SendResult,
+} from "./types.js";
 import { getErrorMessage } from "./types.js";
 import { MessageHandler } from "./message-handler.js";
 import type { GatewayServer } from "../gateway/server.js";
 import type { ApprovalItem } from "../../platform/approval/types.js";
+
+interface SlackMessage {
+  channel: string;
+  subtype?: string;
+  text?: string;
+  bot_id?: string;
+  user?: string;
+}
+
+interface SlackActionBody {
+  actions: Array<{ value: string }>;
+  user: { id: string };
+  channel?: { id: string };
+}
+
+interface SlackMentionEvent {
+  text: string;
+  user: string;
+  channel: string;
+}
 
 export class SlackBot {
   private app: App;
@@ -23,15 +48,8 @@ export class SlackBot {
   }
 
   private setupEventHandlers(): void {
-    // メッセージ受信
     this.app.message(async ({ message, say }) => {
-      const msg = message as {
-        channel: string;
-        subtype?: string;
-        text?: string;
-        bot_id?: string;
-        user?: string;
-      };
+      const msg = message as SlackMessage;
 
       console.log(
         `[Slack] Message received: channel=${msg.channel}, user=${msg.user ?? "unknown"}, text="${(msg.text ?? "").slice(0, 50)}"`,
@@ -50,16 +68,10 @@ export class SlackBot {
       await this.messageHandler.executeTask(intent, say);
     });
 
-    // 承認ボタン処理
     this.app.action("approve_post", async ({ body, ack, respond }) => {
       await ack();
 
-      const actionBody = body as {
-        actions: Array<{ value: string }>;
-        user: { id: string };
-        channel?: { id: string };
-      };
-
+      const actionBody = body as SlackActionBody;
       const itemId = actionBody.actions[0]?.value;
       const userId = actionBody.user.id;
 
@@ -85,31 +97,18 @@ export class SlackBot {
       }
     });
 
-    // 拒否ボタン処理
     this.app.action("reject_post", async ({ body, ack, respond }) => {
       await ack();
 
-      const actionBody = body as {
-        actions: Array<{ value: string }>;
-        user: { id: string };
-      };
-
+      const actionBody = body as SlackActionBody;
       const itemId = actionBody.actions[0]?.value;
       const userId = actionBody.user.id;
 
       await respond(`🚫 <@${userId}> が投稿を拒否しました (ID: ${itemId})`);
-      // 実際のreject処理はGateway経由で実装
     });
 
-    // メンション対応
     this.app.event("app_mention", async ({ event, say }) => {
-      const mentionEvent = event as {
-        text: string;
-        user: string;
-        channel: string;
-      };
-
-      // メンション部分を除去してタスク意図を解析
+      const mentionEvent = event as SlackMentionEvent;
       const textWithoutMention = mentionEvent.text
         .replace(/<@[A-Z0-9]+>/g, "")
         .trim();
@@ -131,9 +130,6 @@ export class SlackBot {
     this.messageHandler.setGateway(gateway);
   }
 
-  /**
-   * 通知を送信
-   */
   async sendNotification(
     channelId: string,
     data: NotificationData,
@@ -148,10 +144,7 @@ export class SlackBot {
         text: `${data.title}: ${data.description}`,
       });
 
-      return {
-        success: true,
-        messageId: result.ts,
-      };
+      return { success: true, messageId: result.ts };
     } catch (error) {
       const errorMessage = getErrorMessage(
         error,
@@ -162,9 +155,6 @@ export class SlackBot {
     }
   }
 
-  /**
-   * 承認リクエストを送信
-   */
   async sendApprovalRequest(
     channelId: string,
     item: ApprovalItem,
@@ -186,10 +176,7 @@ export class SlackBot {
           },
           {
             type: "section",
-            text: {
-              type: "mrkdwn",
-              text: contentText,
-            },
+            text: { type: "mrkdwn", text: contentText },
           },
           {
             type: "context",
@@ -200,30 +187,20 @@ export class SlackBot {
               },
             ],
           },
-          {
-            type: "divider",
-          },
+          { type: "divider" },
           {
             type: "actions",
             elements: [
               {
                 type: "button",
-                text: {
-                  type: "plain_text",
-                  text: "✅ 承認",
-                  emoji: true,
-                },
+                text: { type: "plain_text", text: "✅ 承認", emoji: true },
                 style: "primary",
                 action_id: "approve_post",
                 value: item.id,
               },
               {
                 type: "button",
-                text: {
-                  type: "plain_text",
-                  text: "❌ 拒否",
-                  emoji: true,
-                },
+                text: { type: "plain_text", text: "❌ 拒否", emoji: true },
                 style: "danger",
                 action_id: "reject_post",
                 value: item.id,
@@ -235,10 +212,7 @@ export class SlackBot {
         text: `投稿承認リクエスト: ${contentText.slice(0, 100)}...`,
       });
 
-      return {
-        success: true,
-        messageId: result.ts,
-      };
+      return { success: true, messageId: result.ts };
     } catch (error) {
       const errorMessage = getErrorMessage(
         error,
@@ -249,16 +223,13 @@ export class SlackBot {
     }
   }
 
-  /**
-   * 通知用Block Kitを構築
-   */
   private buildNotificationBlocks(data: NotificationData): unknown[] {
-    const emoji =
-      data.type === "approval_pending"
-        ? "📋"
-        : data.type === "task_executed"
-          ? "✅"
-          : "⚠️";
+    const emojiMap: Record<NotificationType, string> = {
+      approval_pending: "📋",
+      task_executed: "✅",
+      error: "⚠️",
+    };
+    const emoji = emojiMap[data.type];
 
     const blocks: unknown[] = [
       {
@@ -271,14 +242,10 @@ export class SlackBot {
       },
       {
         type: "section",
-        text: {
-          type: "mrkdwn",
-          text: data.description,
-        },
+        text: { type: "mrkdwn", text: data.description },
       },
     ];
 
-    // コンテンツがある場合
     if (data.content) {
       blocks.push({
         type: "section",
@@ -289,44 +256,29 @@ export class SlackBot {
       });
     }
 
-    // エラーがある場合
     if (data.error) {
       blocks.push({
         type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*Error:* ${data.error}`,
-        },
+        text: { type: "mrkdwn", text: `*Error:* ${data.error}` },
       });
     }
 
-    // 承認待ちの場合はボタンを追加
     if (data.type === "approval_pending" && data.itemId) {
       blocks.push(
-        {
-          type: "divider",
-        },
+        { type: "divider" },
         {
           type: "actions",
           elements: [
             {
               type: "button",
-              text: {
-                type: "plain_text",
-                text: "✅ 承認",
-                emoji: true,
-              },
+              text: { type: "plain_text", text: "✅ 承認", emoji: true },
               style: "primary",
               action_id: "approve_post",
               value: data.itemId,
             },
             {
               type: "button",
-              text: {
-                type: "plain_text",
-                text: "❌ 拒否",
-                emoji: true,
-              },
+              text: { type: "plain_text", text: "❌ 拒否", emoji: true },
               style: "danger",
               action_id: "reject_post",
               value: data.itemId,
@@ -353,10 +305,5 @@ export class SlackBot {
 
   isReady(): boolean {
     return this.ready;
-  }
-
-  getBotName(): string | null {
-    // Bolt APIではbot情報を直接取得するのが難しいため、nullを返す
-    return null;
   }
 }

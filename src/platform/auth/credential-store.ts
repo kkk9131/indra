@@ -1,10 +1,3 @@
-/**
- * Credential Store
- *
- * Manages OAuth2 tokens and other credentials.
- * Stores credentials in ~/.indra/credentials/credentials.json
- */
-
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
@@ -66,8 +59,6 @@ export class CredentialStore {
     );
   }
 
-  // ===== X (Twitter) Credentials =====
-
   getXCredentials(): XOAuth2Credentials | undefined {
     return this.credentials.x;
   }
@@ -110,12 +101,9 @@ export class CredentialStore {
     const creds = this.credentials.x;
     if (!creds) return true;
 
-    // Consider token expired 5 minutes before actual expiry
-    const buffer = 5 * 60 * 1000;
-    return Date.now() > creds.expiresAt - buffer;
+    const EXPIRY_BUFFER_MS = 5 * 60 * 1000;
+    return Date.now() > creds.expiresAt - EXPIRY_BUFFER_MS;
   }
-
-  // ===== Discord Credentials =====
 
   getDiscordCredentials(): DiscordCredentials | undefined {
     return this.credentials.discord;
@@ -134,8 +122,6 @@ export class CredentialStore {
   isDiscordAuthenticated(): boolean {
     return !!this.credentials.discord?.botToken;
   }
-
-  // ===== General Methods =====
 
   clearAll(): void {
     this.credentials = {};

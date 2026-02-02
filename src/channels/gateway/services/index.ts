@@ -15,7 +15,7 @@ import type {
 } from "../../../capabilities/content/news/index.js";
 import type { AnalyticsScheduler } from "../../../orchestrator/analytics/index.js";
 import type { SchedulerManager } from "../../../orchestrator/scheduler/index.js";
-import type { XPostWorkflowService } from "../../../capabilities/social/x/index.js";
+import type { RunRegistry } from "../../../orchestrator/agents/subagent/index.js";
 
 import { createChatService, type ChatService } from "./chat.js";
 import { createConfigService, type ConfigService } from "./config.js";
@@ -91,7 +91,7 @@ interface GatewayServiceDeps {
   logStore: LogStore;
   analyticsScheduler: AnalyticsScheduler | null;
   schedulerManager: SchedulerManager;
-  xpostWorkflowService: XPostWorkflowService;
+  runRegistry: RunRegistry;
   sessionManager: SessionManager;
   transcriptManager: TranscriptManager;
   memoryStore: MemoryStore | null;
@@ -147,9 +147,12 @@ export function createGatewayServices(
   const schedule = createScheduleService({
     schedulerManager: deps.schedulerManager,
   });
+  const llmConfig = deps.configManager.get().llm;
   const xpost = createXpostService({
     newsStore: deps.newsStore,
-    xpostWorkflowService: deps.xpostWorkflowService,
+    runRegistry: deps.runRegistry,
+    approvalQueue: deps.approvalQueue,
+    llmProvider: deps.createLLMProvider(llmConfig),
   });
   const session = createSessionService({
     sessionManager: deps.sessionManager,

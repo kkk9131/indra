@@ -17,6 +17,8 @@ export {
   type SkillDefinition,
 } from "./skills-loader.js";
 
+export { extractReportSummary, type ReportSummaryInfo } from "./utils.js";
+
 export {
   ResearchWorkflow,
   type ResearchPhase,
