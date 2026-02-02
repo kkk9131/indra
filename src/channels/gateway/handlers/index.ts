@@ -73,6 +73,7 @@ import {
 } from "./evaluation.js";
 import { handleReportsList, handleReportsGet } from "./reports.js";
 import { handleResearchCreate } from "./research.js";
+import { handleDevlogList } from "./devlog.js";
 import type { GatewayContext, RequestHandler } from "./context.js";
 
 export type { GatewayContext, RequestHandler } from "./context.js";
@@ -173,6 +174,13 @@ export function createHandlerRegistry(
   };
 
   const researchCtx = {
+    sendSuccess: ctx.sendSuccess,
+    sendError: ctx.sendError,
+    getErrorMessage: ctx.getErrorMessage,
+  };
+
+  const devlogCtx = {
+    devlog: ctx.services.devlog,
     sendSuccess: ctx.sendSuccess,
     sendError: ctx.sendError,
     getErrorMessage: ctx.getErrorMessage,
@@ -380,5 +388,7 @@ export function createHandlerRegistry(
       "research.create",
       (ws, frame) => handleResearchCreate(researchCtx, ws, frame),
     ],
+    // Devlog handlers
+    ["devlog.list", (ws, frame) => handleDevlogList(devlogCtx, ws, frame)],
   ]);
 }

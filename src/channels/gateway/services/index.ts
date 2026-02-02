@@ -47,6 +47,7 @@ import type {
   MemoryIndexer,
 } from "../../../platform/memory/index.js";
 import { createReportsService, type ReportsService } from "./reports.js";
+import { createDevlogService, type DevlogService } from "./devlog.js";
 
 export type { EvaluationService } from "./evaluation.js";
 export type { ReportsService, ReportSummary, ReportDetail } from "./reports.js";
@@ -75,6 +76,7 @@ export interface GatewayServices {
   memory: MemoryService;
   evaluation: EvaluationService;
   reports: ReportsService;
+  devlog: DevlogService;
 }
 
 interface GatewayServiceDeps {
@@ -172,6 +174,8 @@ export function createGatewayServices(
 
   const reports = createReportsService();
 
+  const devlog = createDevlogService();
+
   return {
     config,
     chat,
@@ -187,6 +191,7 @@ export function createGatewayServices(
     memory: memory!,
     evaluation,
     reports,
+    devlog,
     discordIntegration: createDiscordIntegrationService({
       chat,
       post,

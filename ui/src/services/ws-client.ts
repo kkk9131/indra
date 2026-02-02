@@ -3,8 +3,8 @@
  * Provides connection management and method wrappers for UI components.
  */
 
-export type { LogEntry } from "../ui/types.js";
-import type { LogEntry } from "../ui/types.js";
+export type { LogEntry, DevlogEntry } from "../ui/types.js";
+import type { LogEntry, DevlogEntry } from "../ui/types.js";
 import { buildWsUrl } from "./ws-url.js";
 
 export interface ApprovalItem {
@@ -74,7 +74,8 @@ export type WSClientEvent =
   | "xpost.progress"
   | "xpost.completed"
   | "xpost.failed"
-  | "chat.cancelled";
+  | "chat.cancelled"
+  | "devlog.updated";
 
 // Image attachment type for chat
 export interface ChatImage {
@@ -121,6 +122,7 @@ export interface GeneratedPost {
 export interface XPostWorkflowResult {
   success: boolean;
   articleId: string;
+  runId?: string;
   bestPost?: GeneratedPost;
   allPosts?: GeneratedPost[];
   error?: string;
@@ -637,6 +639,20 @@ export class WSClientService extends EventTarget {
       throw new Error(res.error?.message ?? "Failed to create research");
     }
     return res.payload as ResearchCreateResult;
+  }
+
+  // ===== Devlog API Methods =====
+
+  async devlogList(params?: {
+    startDate?: string;
+    endDate?: string;
+    limit?: number;
+  }): Promise<DevlogEntry[]> {
+    const res = await this.sendRequest("devlog.list", params ?? {});
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to list devlogs");
+    }
+    return (res.payload as { devlogs: DevlogEntry[] }).devlogs;
   }
 }
 
