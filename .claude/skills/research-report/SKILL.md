@@ -27,6 +27,11 @@ configSchema:
       - value: en
         label: English
     defaultValue: ja
+  - key: useCodex
+    label: Codex使用
+    type: boolean
+    description: 情報収集・分析をCodexに委託（Claudeはレポート作成）
+    defaultValue: true
 ---
 
 # Research Report Skill
@@ -42,13 +47,13 @@ WebSearchツールで情報を収集し、構造化されたリサーチレポ�
 ## ワークフロー
 
 ```
-[Phase 1] トピック分析・検索クエリ設計
+[Phase 1] トピック分析・検索クエリ設計 (Claude)
     ↓
-[Phase 2] 情報収集 (WebSearch)
+[Phase 2] 情報収集 (Codex)
     ↓
-[Phase 3] 情報整理・分析
+[Phase 3] 情報整理・分析 (Codex)
     ↓
-[Phase 4] レポート作成
+[Phase 4] レポート作成 (Claude)
     ↓
 [Phase 5] 保存・納品
 ```
