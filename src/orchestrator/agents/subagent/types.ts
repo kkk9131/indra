@@ -41,7 +41,14 @@ export interface SubagentRun {
 /** X運用のチェックポイント */
 export interface XPostCheckpoint {
   articleId: string;
-  phase: "analyzing" | "generating" | "evaluating" | "refining" | "completed";
+  phase:
+    | "analyzing"
+    | "generating"
+    | "evaluating"
+    | "refining"
+    | "selecting"
+    | "pending_approval"
+    | "completed";
   generatedPosts?: GeneratedPost[];
   bestPostId?: string;
   /** 投稿済みID（二重投稿防止） */
@@ -51,7 +58,9 @@ export interface XPostCheckpoint {
 
 export interface GeneratedPost {
   id: string;
-  content: string;
+  text: string;
+  charCount?: number;
+  templateUsed?: string;
   score?: number;
   evaluationResult?: PostEvaluationResult;
 }

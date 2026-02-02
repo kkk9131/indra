@@ -9,6 +9,14 @@ import {
   type GeneratedPost,
 } from "../services/ws-client.js";
 
+export interface ContentInput {
+  id: string;
+  title: string;
+  url: string;
+  content: string;
+  summary?: string;
+}
+
 const closeIcon = svg`<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>`;
 const checkIcon = svg`<polyline points="20 6 9 17 4 12"/>`;
 
@@ -314,6 +322,28 @@ export class XPostModalElement extends LitElement {
       font-size: 14px;
     }
 
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--bg-tertiary, #f5f5f5);
+      border-top-color: var(--primary, #2e7d32);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .progress-indicator {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
     .all-posts-section {
       margin-top: 24px;
     }
@@ -358,7 +388,10 @@ export class XPostModalElement extends LitElement {
   `;
 
   @property({ type: Object })
-  article!: NewsArticle;
+  article: NewsArticle | null = null;
+
+  @property({ type: Object })
+  contentInput: ContentInput | null = null;
 
   @state()
   private progress = 0;
@@ -402,13 +435,25 @@ export class XPostModalElement extends LitElement {
     wsClient.removeEventListener("xpost.failed", this.boundHandleFailed);
   }
 
+  private get sourceId(): string {
+    return this.contentInput?.id ?? this.article?.id ?? "";
+  }
+
+  private get sourceTitle(): string {
+    return this.contentInput?.title ?? this.article?.title ?? "";
+  }
+
   private async startWorkflow(): Promise<void> {
     try {
-      await wsClient.xpostGenerate({ articleId: this.article.id });
+      if (this.contentInput) {
+        await wsClient.xpostGenerateFromContent(this.contentInput);
+      } else if (this.article) {
+        await wsClient.xpostGenerate({ articleId: this.article.id });
+      }
     } catch (error) {
       this.result = {
         success: false,
-        articleId: this.article.id,
+        articleId: this.sourceId,
         error: error instanceof Error ? error.message : "Unknown error",
         processingTime: 0,
       };
@@ -418,7 +463,7 @@ export class XPostModalElement extends LitElement {
 
   private handleProgress(e: Event): void {
     const event = e as CustomEvent<XPostProgressEvent>;
-    if (event.detail?.articleId === this.article.id) {
+    if (event.detail?.articleId === this.sourceId) {
       this.progress = event.detail.progress;
       this.stage = event.detail.stage;
       this.message = event.detail.message;
@@ -427,7 +472,9 @@ export class XPostModalElement extends LitElement {
 
   private handleCompleted(e: Event): void {
     const event = e as CustomEvent<XPostWorkflowResult>;
-    if (event.detail?.articleId === this.article.id) {
+    // runId でマッチするか、articleId でマッチする場合に処理
+    const detail = event.detail;
+    if (detail?.articleId === this.sourceId || detail?.runId) {
       this.result = event.detail;
       this.isLoading = false;
       if (this.result.bestPost) {
@@ -437,11 +484,16 @@ export class XPostModalElement extends LitElement {
   }
 
   private handleFailed(e: Event): void {
-    const event = e as CustomEvent<{ articleId: string; error: string }>;
-    if (event.detail?.articleId === this.article.id) {
+    const event = e as CustomEvent<{
+      articleId?: string;
+      id?: string;
+      error: string;
+    }>;
+    const failedId = event.detail?.articleId ?? event.detail?.id;
+    if (failedId === this.sourceId) {
       this.result = {
         success: false,
-        articleId: this.article.id,
+        articleId: this.sourceId,
         error: event.detail.error,
         processingTime: 0,
       };
@@ -511,12 +563,9 @@ export class XPostModalElement extends LitElement {
   private renderProgress(): ReturnType<typeof html> {
     return html`
       <div class="progress-section">
-        <div class="progress-label">
+        <div class="progress-indicator">
+          <div class="spinner"></div>
           <span>${this.message}</span>
-          <span>${this.progress}%</span>
-        </div>
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: ${this.progress}%"></div>
         </div>
       </div>
     `;
@@ -648,7 +697,7 @@ export class XPostModalElement extends LitElement {
 
           <div class="modal-body">
             <div class="article-info">
-              <div class="article-title">${this.article.title}</div>
+              <div class="article-title">${this.sourceTitle}</div>
             </div>
 
             ${this.renderBodyContent()}

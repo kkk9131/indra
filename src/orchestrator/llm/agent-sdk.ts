@@ -254,6 +254,7 @@ export class AgentSDKProvider implements LLMProvider {
     agentOpts: AgentOptions,
   ) {
     type SDKPermissionMode = "default" | "acceptEdits" | "bypassPermissions";
+    type SDKSettingSource = "user" | "project";
 
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
 
@@ -263,9 +264,14 @@ export class AgentSDKProvider implements LLMProvider {
       allowedTools?: string[];
       permissionMode?: SDKPermissionMode;
       systemPrompt?: string;
+      cwd?: string;
+      settingSources?: SDKSettingSource[];
     } = {
       model: this.resolveModel(options),
       maxTurns: agentOpts.maxTurns ?? 10,
+      // Enable Skills from filesystem
+      cwd: process.cwd(),
+      settingSources: ["user", "project"],
     };
 
     if (systemPrompt) {
