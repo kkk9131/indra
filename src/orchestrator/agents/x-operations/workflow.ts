@@ -1,14 +1,3 @@
-/**
- * X運用ワークフロー
- *
- * 記事からXポストを作成するワークフローを管理
- *
- * レポート機能と同様にClaude Agent SDKでスキルを呼び出す方式:
- * - chatStreamWithAgentでエージェントを実行
- * - プロンプトでスキル（x-post-compose等）を指示
- * - Claudeが自動でSkillツールを使用
- */
-
 import type { LLMProvider } from "../../llm/index.js";
 import {
   type RunRegistry,
@@ -52,13 +41,9 @@ export class XOperationsWorkflow {
     this.approvalQueue = approvalQueue ?? new ApprovalQueue();
   }
 
-  /**
-   * 記事からXポストを作成
-   */
   async createPost(article: NewsArticle): Promise<XPostResult> {
     console.log(`[XOperationsWorkflow] Starting createPost for: ${article.id}`);
 
-    // 冪等性チェック
     const idempotencyKey = this.idempotency.generateKey(
       article.id,
       "create-post",
@@ -71,15 +56,12 @@ export class XOperationsWorkflow {
     }
 
     try {
-      console.log(`[XOperationsWorkflow] Starting run for: ${article.id}`);
-      // 1. 実行開始を記録
       const run = await this.registry.start("x-operations-agent", {
         articleId: article.id,
         articleTitle: article.title,
       });
       console.log(`[XOperationsWorkflow] Run started: ${run.id}`);
 
-      // 2. チェックポイント初期化
       const initialCheckpoint: XPostCheckpoint = {
         articleId: article.id,
         phase: "analyzing",
@@ -90,28 +72,16 @@ export class XOperationsWorkflow {
         initialCheckpoint as unknown as Record<string, unknown>,
       );
 
-      // 3. ワークフロー実行
       const result = await this.executeWorkflow(run.id, article);
-
-      // 6. 結果を記録
       this.idempotency.recordSuccess(idempotencyKey, result);
 
       return result;
     } catch (error) {
-      // 失敗時は冪等キーをクリア（再試行を許可）
       this.idempotency.clearOnFailure(idempotencyKey);
       throw error;
     }
   }
 
-  /**
-   * ワークフローを実行（レポート機能と同じ方式）
-   *
-   * Claude Agent SDKでスキルを呼び出す:
-   * - x-post-compose: ポスト生成
-   * - x-algorithm-evaluate: 評価
-   * - x-post-refine: 改善
-   */
   private async executeWorkflow(
     runId: string,
     article: NewsArticle,
@@ -126,17 +96,17 @@ export class XOperationsWorkflow {
       };
     }
 
-    // エージェント定義を取得（agents.ts から）
     const agents = await createXOperationsAgents();
     const agentDef = agents["x-operations-agent"];
 
-    // Phase: Generating
     await this.registry.updateCheckpoint(runId, { phase: "generating" });
 
-    // Agent SDK で X運用スキルを呼び出し
-    const prompt = `x-post-compose スキルを使って、以下の記事から5つのX投稿候補を生成してください。
-その後、x-algorithm-evaluate スキルで評価し、上位3つを選定してください。
-最後に、x-post-refine スキルで各ポストを改善してください。
+    const prompt = `以下の記事からX投稿を作成してください。
+
+## ワークフロー
+1. glm-generate スキルを使って5つの投稿候補を生成
+2. x-algorithm-evaluate スキルで評価し上位3つを選定
+3. x-post-refine スキルで改善
 
 ## 記事情報
 タイトル: ${article.title}
@@ -146,8 +116,13 @@ ${article.summary ? `要約: ${article.summary}` : ""}
 本文:
 ${article.content.slice(0, 2000)}${article.content.length > 2000 ? "..." : ""}
 
-## 出力形式
-最終的に以下のJSON形式で結果を出力してください:
+## glm-generate用プロンプト
+以下の内容でglm-generateスキルを呼び出してください:
+
+記事「${article.title}」から5つのX投稿候補を生成。
+各投稿は280文字以内、日本語、エンゲージメント重視。
+
+## 最終出力形式
 \`\`\`json
 {
   "posts": [
@@ -178,40 +153,47 @@ ${article.content.slice(0, 2000)}${article.content.length > 2000 ? "..." : ""}
         },
       },
     )) {
-      if (event.type === "tool_start") {
-        console.log(`[XOperationsWorkflow] Tool start: ${event.tool}`);
-        // フェーズ更新
-        if (event.tool === "Skill") {
-          const skillArg = String(event.input ?? "");
-          if (skillArg.includes("evaluate")) {
-            await this.registry.updateCheckpoint(runId, {
-              phase: "evaluating",
-            });
-          } else if (skillArg.includes("refine")) {
-            await this.registry.updateCheckpoint(runId, { phase: "refining" });
+      switch (event.type) {
+        case "tool_start":
+          console.log(`[XOperationsWorkflow] Tool start: ${event.tool}`);
+          if (event.tool === "Skill") {
+            const skillArg = String(event.input ?? "");
+            if (skillArg.includes("evaluate")) {
+              await this.registry.updateCheckpoint(runId, {
+                phase: "evaluating",
+              });
+            } else if (skillArg.includes("refine")) {
+              await this.registry.updateCheckpoint(runId, {
+                phase: "refining",
+              });
+            }
           }
-        }
-      } else if (event.type === "tool_result") {
-        console.log(
-          `[XOperationsWorkflow] Tool result: ${event.tool} -> ${event.result.slice(0, 100)}...`,
-        );
-      } else if (event.type === "turn_complete") {
-        console.log(`[XOperationsWorkflow] Turn ${event.turnNumber} complete`);
-      } else if (event.type === "done") {
-        console.log(
-          `[XOperationsWorkflow] Done: ${event.result.slice(0, 200)}...`,
-        );
-        finalResult = event.result;
-      } else if (event.type === "cancelled") {
-        console.log(`[XOperationsWorkflow] Cancelled: ${event.reason}`);
+          break;
+        case "tool_result":
+          console.log(
+            `[XOperationsWorkflow] Tool result: ${event.tool} -> ${event.result.slice(0, 100)}...`,
+          );
+          break;
+        case "turn_complete":
+          console.log(
+            `[XOperationsWorkflow] Turn ${event.turnNumber} complete`,
+          );
+          break;
+        case "done":
+          console.log(
+            `[XOperationsWorkflow] Done: ${event.result.slice(0, 200)}...`,
+          );
+          finalResult = event.result;
+          break;
+        case "cancelled":
+          console.log(`[XOperationsWorkflow] Cancelled: ${event.reason}`);
+          break;
       }
     }
 
-    // 結果をパース
     const parsed = this.parseWorkflowResult(finalResult);
 
     if (!parsed || parsed.posts.length === 0) {
-      // フォールバック
       console.log(
         `[XOperationsWorkflow] Failed to parse result, using fallback`,
       );
@@ -253,7 +235,6 @@ ${article.content.slice(0, 2000)}${article.content.length > 2000 ? "..." : ""}
       generatedPosts.find((p) => p.id === parsed.bestPostId) ??
       generatedPosts[0];
 
-    // 承認待ちに登録
     await this.registry.updateCheckpoint(runId, {
       phase: "pending_approval",
       generatedPosts,
@@ -281,9 +262,6 @@ ${article.content.slice(0, 2000)}${article.content.length > 2000 ? "..." : ""}
     };
   }
 
-  /**
-   * ワークフロー結果をパース
-   */
   private parseWorkflowResult(result: string): {
     posts: GeneratedPost[];
     bestPostId: string;
@@ -310,9 +288,6 @@ ${article.content.slice(0, 2000)}${article.content.length > 2000 ? "..." : ""}
     }
   }
 
-  /**
-   * 未完了のワークフローを復旧
-   */
   async recoverPendingRuns(): Promise<void> {
     const pending = await this.registry.getPending();
 
@@ -320,16 +295,12 @@ ${article.content.slice(0, 2000)}${article.content.length > 2000 ? "..." : ""}
       const checkpoint = run.checkpoint as unknown as XPostCheckpoint;
 
       if (checkpoint.phase === "completed") {
-        // 完了状態だがステータスが未更新
         await this.registry.complete(run.id);
         console.log(`Recovered completed run: ${run.id}`);
       } else {
-        // 途中で中断されたタスク
         console.log(
           `Found interrupted run: ${run.id}, phase: ${checkpoint.phase}`,
         );
-        // 自動復旧はせず、ログのみ
-        // 必要に応じて手動で再実行または破棄を判断
       }
     }
   }

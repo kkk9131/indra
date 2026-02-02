@@ -1,9 +1,3 @@
-/**
- * X運用サブエージェント定義
- *
- * Claude Agent SDKのagents形式でX運用エージェントを定義
- */
-
 import { loadXOperationsSkills, buildSkillsPrompt } from "./skills-loader.js";
 
 export interface XOperationsAgentDefinition {
@@ -14,9 +8,6 @@ export interface XOperationsAgentDefinition {
   model?: "haiku" | "sonnet" | "opus";
 }
 
-/**
- * X運用エージェントのシステムプロンプト
- */
 const X_OPERATIONS_SYSTEM_PROMPT = `# X Operations Agent
 
 X(Twitter)投稿を作成・評価・改善するエージェント。
@@ -55,11 +46,22 @@ X(Twitter)投稿を作成・評価・改善するエージェント。
 - 絵文字使用: 適度に（🚀🔥✅☝️👇👉👈推奨）
 - 句読点: 使わない（改行で区切る）
 - 外部リンク: 単体投稿は避ける
+
+## 利用可能なスキル
+
+以下のスキルをSkill toolで呼び出してタスクを実行:
+
+- **x-post-structure**: 構文テンプレート生成（コンテンツタイプとトーンに応じた最適なテンプレートを推薦）
+- **x-post-compose**: ポスト生成（記事情報をテンプレートに適用してXポストを作成）
+- **x-algorithm-evaluate**: Xアルゴリズム評価（生成ポストをスコアリングし改善提案を返す）
+- **x-post-refine**: ポスト改善（評価結果を基にポストを修正・改善）
+
+スキル呼び出し例:
+\`\`\`
+Skill("x-post-compose", "記事タイトル: Claude Code 新機能発表")
+\`\`\`
 `;
 
-/**
- * X運用エージェントを作成
- */
 export async function createXOperationsAgents(
   projectRoot?: string,
 ): Promise<Record<string, XOperationsAgentDefinition>> {
@@ -75,7 +77,16 @@ export async function createXOperationsAgents(
       name: "x-operations-agent",
       description: "X(Twitter)投稿作成・評価・改善の専門エージェント",
       prompt: fullPrompt,
-      tools: ["WebFetch", "WebSearch", "Read", "Grep", "Glob"],
+      tools: [
+        "Skill",
+        "WebFetch",
+        "WebSearch",
+        "Read",
+        "Write",
+        "Grep",
+        "Glob",
+        "Bash",
+      ],
       model: "sonnet",
     },
     "x-post-analyzer": {
@@ -107,9 +118,6 @@ export async function createXOperationsAgents(
   };
 }
 
-/**
- * エージェント定義をSDK形式に変換
- */
 export function toSDKAgentFormat(
   agents: Record<string, XOperationsAgentDefinition>,
 ): Record<string, Omit<XOperationsAgentDefinition, "name">> {
