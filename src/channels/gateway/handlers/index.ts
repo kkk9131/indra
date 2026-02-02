@@ -137,7 +137,7 @@ export function createHandlerRegistry(
 
   const chatCtx = {
     chat: ctx.services.chat,
-    memory: ctx.services.memory,
+    memory: ctx.services.memory ?? undefined,
     sendSuccess: ctx.sendSuccess,
     sendError: ctx.sendError,
     getErrorMessage: ctx.getErrorMessage,
@@ -316,7 +316,6 @@ export function createHandlerRegistry(
       (ws, frame) => handleSessionsUpdateTitle(sessionCtx, ws, frame),
     ],
     ["chat.history", (ws, frame) => handleChatHistory(sessionCtx, ws, frame)],
-    // Memory handlers (if available)
     ...(memoryCtx
       ? ([
           [
@@ -342,7 +341,6 @@ export function createHandlerRegistry(
           ],
         ] as [string, RequestHandler][])
       : []),
-    // Evaluation handlers
     [
       "eval.task.list",
       (ws, frame) => handleEvalTaskList(evaluationCtx, ws, frame),
@@ -380,15 +378,12 @@ export function createHandlerRegistry(
       "eval.grader.status",
       (ws, frame) => handleEvalGraderStatus(evaluationCtx, ws, frame),
     ],
-    // Reports handlers
     ["reports.list", (ws, frame) => handleReportsList(reportsCtx, ws, frame)],
     ["reports.get", (ws, frame) => handleReportsGet(reportsCtx, ws, frame)],
-    // Research handlers
     [
       "research.create",
       (ws, frame) => handleResearchCreate(researchCtx, ws, frame),
     ],
-    // Devlog handlers
     ["devlog.list", (ws, frame) => handleDevlogList(devlogCtx, ws, frame)],
   ]);
 }

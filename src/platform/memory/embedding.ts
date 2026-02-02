@@ -88,6 +88,8 @@ export function createEmbeddingProvider(): EmbeddingProvider {
     return provider;
   }
 
-  console.log("Memory: No API configured, using dummy embedding provider");
+  console.warn(
+    "⚠️ OPENAI_API_KEY未設定: 意味的検索が無効です (DummyEmbeddingProvider使用)",
+  );
   return new DummyEmbeddingProvider();
 }

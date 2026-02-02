@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 import { createServer, type Server } from "http";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
 import {
   SessionManager,
   TranscriptManager,
@@ -82,6 +84,7 @@ import {
   MemoryIndexer,
   createEmbeddingProvider,
   ensureMemoryFiles,
+  getMemoryBasePath,
 } from "../../platform/memory/index.js";
 import {
   EvaluationStore,
@@ -225,7 +228,6 @@ export class GatewayServer {
       maxLength: 5000,
     });
 
-    // スケジューラーを初期化
     this.scheduleStore = new ScheduleStore();
     this.taskRegistry = new TaskRegistry();
     this.taskExecutor = new TaskExecutor(
@@ -305,7 +307,6 @@ export class GatewayServer {
 
   private initMemory(): void {
     try {
-      // MEMORY.md と memory/ ディレクトリが存在しなければ作成
       ensureMemoryFiles().catch((err) =>
         console.error("Failed to ensure memory files:", err),
       );
@@ -320,6 +321,10 @@ export class GatewayServer {
       console.log(
         `MemoryStore: Initialized (vector: ${this.memoryStore.isVectorEnabled()})`,
       );
+
+      this.indexExistingMemoryFiles().catch((err) =>
+        console.error("Failed to index existing memory files:", err),
+      );
     } catch (error) {
       console.error("Failed to initialize memory:", error);
       this.memoryStore = null;
@@ -328,8 +333,36 @@ export class GatewayServer {
     }
   }
 
+  private async indexExistingMemoryFiles(): Promise<void> {
+    if (!this.memoryIndexer) return;
+
+    const memoryDir = join(getMemoryBasePath(), "memory");
+    try {
+      const files = await readdir(memoryDir);
+      const mdFiles = files.filter((f) => f.endsWith(".md"));
+
+      let indexed = 0;
+      for (const file of mdFiles) {
+        const filePath = join(memoryDir, file);
+        try {
+          const { readFile } = await import("node:fs/promises");
+          const content = await readFile(filePath, "utf-8");
+          await this.memoryIndexer.indexFile(filePath, content);
+          indexed++;
+        } catch (err) {
+          console.warn(`Failed to index ${file}:`, err);
+        }
+      }
+
+      if (indexed > 0) {
+        console.log(`MemoryStore: Indexed ${indexed} existing memory files`);
+      }
+    } catch {
+      // Skip if memory/ directory doesn't exist
+    }
+  }
+
   private initAnalytics(): void {
-    // ZAI_API_KEY がない場合はスキップ
     console.log(
       "initAnalytics: ZAI_API_KEY =",
       process.env.ZAI_API_KEY ? "set" : "not set",
@@ -371,7 +404,6 @@ export class GatewayServer {
   }
 
   private initScheduledTasks(): void {
-    // タスク定義を登録
     this.schedulerManager.registerTaskType({
       type: "news",
       name: "ニュース取得",
@@ -482,7 +514,6 @@ export class GatewayServer {
       ],
     });
 
-    // スケジューラーを開始
     this.schedulerManager.start();
     console.log("SchedulerManager: Initialized and started");
   }

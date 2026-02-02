@@ -73,7 +73,7 @@ export interface GatewayServices {
   xpost: XpostService;
   discordIntegration: DiscordIntegrationService;
   session: SessionService;
-  memory: MemoryService;
+  memory: MemoryService | null;
   evaluation: EvaluationService;
   reports: ReportsService;
   devlog: DevlogService;
@@ -188,7 +188,7 @@ export function createGatewayServices(
     schedule,
     xpost,
     session,
-    memory: memory!,
+    memory,
     evaluation,
     reports,
     devlog,

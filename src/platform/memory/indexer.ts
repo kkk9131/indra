@@ -34,7 +34,6 @@ export function chunkText(
     const line = lines[i];
     const lineTokens = estimateTokens(line);
 
-    // 見出しまたは空行でチャンク区切り（現在のチャンクが十分大きい場合）
     const isHeading = line.startsWith("#");
     const isEmptyLine = line.trim() === "";
     const shouldSplit =
@@ -47,7 +46,6 @@ export function chunkText(
         endLine: i,
       });
 
-      // オーバーラップ処理: 最後の数行を次のチャンクに含める
       const overlapLines: string[] = [];
       let overlapTokens = 0;
       for (
@@ -67,7 +65,6 @@ export function chunkText(
     currentChunk.push(line);
     currentTokens += lineTokens;
 
-    // チャンクサイズを超えた場合
     if (currentTokens > chunkSize) {
       chunks.push({
         content: currentChunk.join("\n"),
@@ -75,7 +72,6 @@ export function chunkText(
         endLine: i + 1,
       });
 
-      // オーバーラップ処理
       const overlapLines: string[] = [];
       let overlapTokens = 0;
       for (
@@ -93,7 +89,6 @@ export function chunkText(
     }
   }
 
-  // 残りのチャンクを追加
   if (currentChunk.length > 0) {
     chunks.push({
       content: currentChunk.join("\n"),
@@ -105,9 +100,6 @@ export function chunkText(
   return chunks;
 }
 
-/**
- * ファイルをチャンク化
- */
 export function chunkFile(input: ChunkInput): ChunkResult {
   const { content, existingHashes } = input;
 
@@ -172,7 +164,7 @@ export class MemoryIndexer {
           )
         : [];
 
-    const transaction = this.store["db"].transaction(() => {
+    this.store.runTransaction(() => {
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
         const id = this.store.saveChunk({
@@ -203,7 +195,6 @@ export class MemoryIndexer {
       const keepHashes = [...chunks.map((c) => c.hash), ...unchanged];
       this.store.deleteExcept(filePath, keepHashes);
     });
-    transaction();
 
     return {
       added: chunks.length,

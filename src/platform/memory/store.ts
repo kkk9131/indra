@@ -77,7 +77,6 @@ export class MemoryStore {
 
   private initVectorTable(): void {
     try {
-      // sqlite-vec 拡張をロード
       sqliteVec.load(this.db);
 
       this.db.exec(`
@@ -150,13 +149,10 @@ export class MemoryStore {
     if (!this.vectorEnabled) return;
 
     try {
-      const stmt = this.db.prepare(`
-        INSERT INTO memory_vec (chunk_id, embedding)
-        VALUES (?, ?)
-        ON CONFLICT(chunk_id) DO UPDATE SET
-          embedding = excluded.embedding
-      `);
-      stmt.run(chunkId, new Float32Array(embedding));
+      this.db.prepare(`DELETE FROM memory_vec WHERE chunk_id = ?`).run(chunkId);
+      this.db
+        .prepare(`INSERT INTO memory_vec (chunk_id, embedding) VALUES (?, ?)`)
+        .run(chunkId, new Float32Array(embedding));
     } catch (error) {
       console.error("Failed to save embedding:", error);
     }
@@ -406,6 +402,11 @@ export class MemoryStore {
     }
 
     return parsed.data;
+  }
+
+  runTransaction<T>(fn: () => T): T {
+    const transaction = this.db.transaction(fn);
+    return transaction();
   }
 
   close(): void {

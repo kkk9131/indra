@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { readFile, writeFile, mkdir, appendFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 
@@ -7,8 +7,6 @@ import type { MemoryStore } from "../memory/store.js";
 import type { MemorySearch } from "../memory/search.js";
 import type { MemoryIndexer } from "../memory/indexer.js";
 import { getMemoryBasePath, getTodayNotePath } from "../memory/types.js";
-
-// ===== Schemas =====
 
 export const MemorySearchInputSchema = z.object({
   query: z.string().describe("検索クエリ（自然言語またはキーワード）"),
@@ -41,8 +39,6 @@ export const MemoryWriteInputSchema = z.object({
 export type MemorySearchInput = z.infer<typeof MemorySearchInputSchema>;
 export type MemoryGetInput = z.infer<typeof MemoryGetInputSchema>;
 export type MemoryWriteInput = z.infer<typeof MemoryWriteInputSchema>;
-
-// ===== Tool Definitions =====
 
 export const MEMORY_TOOLS = [
   {
@@ -105,13 +101,26 @@ export const MEMORY_TOOLS = [
   },
 ];
 
-// ===== Handlers =====
-
 function normalizeFilePath(filePath?: string): string {
   if (!filePath) return getTodayNotePath();
-  if (filePath.startsWith("/")) return filePath;
-  if (filePath === "MEMORY.md") return join(getMemoryBasePath(), "MEMORY.md");
-  return join(getMemoryBasePath(), filePath);
+
+  const basePath = getMemoryBasePath();
+
+  if (filePath === "MEMORY.md") {
+    return join(basePath, "MEMORY.md");
+  }
+
+  const resolved = filePath.startsWith("/")
+    ? resolve(filePath)
+    : resolve(basePath, filePath);
+
+  if (!resolved.startsWith(basePath + "/") && resolved !== basePath) {
+    throw new Error(
+      `Invalid path: access outside of ${basePath} is not allowed`,
+    );
+  }
+
+  return resolved;
 }
 
 export async function handleMemorySearch(
