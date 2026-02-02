@@ -11,7 +11,6 @@ import type { ContentInput } from "./xpost-modal.js";
 
 const refreshIcon = svg`<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>`;
 const copyIcon = svg`<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>`;
-const xIcon = svg`<path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>`;
 
 type FilterOption = "all" | LogType | "devlog";
 
@@ -224,29 +223,6 @@ export class LogPageElement extends LitElement {
       color: white;
       border-color: var(--primary, #2e7d32);
     }
-
-    .post-x-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      border: none;
-      background: #000;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-
-    .post-x-btn:hover {
-      background: #333;
-    }
-
-    .post-x-btn svg {
-      width: 16px;
-      height: 16px;
-      fill: #fff;
-    }
   `;
 
   @state()
@@ -414,15 +390,14 @@ export class LogPageElement extends LitElement {
         : (this.devlogs.find((d) => d.id === id) ?? null);
   }
 
-  private handleOpenXpostModal(): void {
-    if (!this.selectedDevlog) return;
-
+  private handlePostToX(e: CustomEvent<{ devlog: DevlogEntry }>): void {
+    const devlog = e.detail.devlog;
     this.xpostContent = {
-      id: `devlog_${this.selectedDevlog.id}`,
-      title: `開発ログ ${this.selectedDevlog.date}`,
+      id: `devlog_${devlog.id}`,
+      title: `開発ログ ${devlog.date}`,
       url: "",
-      content: this.formatDevlogForXpost(this.selectedDevlog),
-      summary: `${this.selectedDevlog.stats.totalCommits}件のコミット`,
+      content: this.formatDevlogForXpost(devlog),
+      summary: `${devlog.stats.totalCommits}件のコミット`,
     };
   }
 
@@ -492,6 +467,8 @@ export class LogPageElement extends LitElement {
               .devlog="${devlog}"
               .expanded="${this.selectedDevlog?.id === devlog.id}"
               @toggle="${(e: CustomEvent) => this.handleDevlogToggle(e)}"
+              @post-to-x="${(e: CustomEvent<{ devlog: DevlogEntry }>) =>
+                this.handlePostToX(e)}"
             ></indra-devlog-timeline-item>
           `,
         )}
@@ -504,17 +481,6 @@ export class LogPageElement extends LitElement {
       <div class="page-header">
         <span class="page-title">Logs</span>
         <div class="header-actions">
-          ${this.filter === "devlog" && this.selectedDevlog
-            ? html`
-                <button
-                  class="post-x-btn"
-                  @click="${this.handleOpenXpostModal}"
-                  title="Generate X Post"
-                >
-                  <svg viewBox="0 0 24 24">${xIcon}</svg>
-                </button>
-              `
-            : null}
           <button
             class="copy-btn ${this.copied ? "copied" : ""}"
             @click="${this.handleCopyAll}"

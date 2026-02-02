@@ -30,8 +30,8 @@ function execGit(command: string): string {
 
 function buildDateArgs(startDate?: string, endDate?: string): string {
   const args: string[] = [];
-  if (startDate) args.push(`--since="${startDate}"`);
-  if (endDate) args.push(`--until="${endDate}"`);
+  if (startDate) args.push(`--since="${startDate} 00:00:00"`);
+  if (endDate) args.push(`--until="${endDate} 23:59:59"`);
   return args.join(" ");
 }
 

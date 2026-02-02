@@ -5,6 +5,7 @@ import type { DevlogEntry, CommitInfo } from "./types.js";
 const gitCommitIcon = svg`<circle cx="12" cy="12" r="3"/><line x1="3" y1="12" x2="9" y2="12"/><line x1="15" y1="12" x2="21" y2="12"/>`;
 const chevronDownIcon = svg`<polyline points="6 9 12 15 18 9"/>`;
 const chevronUpIcon = svg`<polyline points="18 15 12 9 6 15"/>`;
+const xIcon = svg`<path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>`;
 
 @customElement("indra-devlog-timeline-item")
 export class DevlogTimelineItemElement extends LitElement {
@@ -269,6 +270,35 @@ export class DevlogTimelineItemElement extends LitElement {
       font-size: 11px;
       color: var(--text-secondary, #636e72);
     }
+
+    .footer {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 12px;
+    }
+
+    .post-x-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: none;
+      background: #000;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .post-x-btn:hover {
+      background: #333;
+    }
+
+    .post-x-btn svg {
+      width: 16px;
+      height: 16px;
+      fill: #fff;
+    }
   `;
 
   @property({ type: Object })
@@ -280,10 +310,25 @@ export class DevlogTimelineItemElement extends LitElement {
   @state()
   private showFiles: Set<string> = new Set();
 
-  private handleClick(): void {
+  private handleClick(e: Event): void {
+    const target = e.target as HTMLElement;
+    if (target.closest(".post-x-btn")) {
+      return;
+    }
     this.dispatchEvent(
       new CustomEvent("toggle", {
         detail: { id: this.devlog.id },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private handlePostToX(e: Event): void {
+    e.stopPropagation();
+    this.dispatchEvent(
+      new CustomEvent("post-to-x", {
+        detail: { devlog: this.devlog },
         bubbles: true,
         composed: true,
       }),
@@ -399,6 +444,16 @@ export class DevlogTimelineItemElement extends LitElement {
               </div>
             `
           : null}
+
+        <div class="footer">
+          <button
+            class="post-x-btn"
+            @click="${this.handlePostToX}"
+            title="Post to X"
+          >
+            <svg viewBox="0 0 24 24">${xIcon}</svg>
+          </button>
+        </div>
       </article>
     `;
   }
