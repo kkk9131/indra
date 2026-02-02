@@ -1,10 +1,3 @@
-/**
- * SubagentRegistry型定義
- *
- * SDKの`resume`機能は「会話コンテキストの復元」であり「タスク状態の復元」ではない。
- * この混同を避けるため、SubagentRegistryで実行状態を管理する。
- */
-
 export type SubagentStatus = "pending" | "running" | "completed" | "failed";
 
 export interface ToolCallRecord {
@@ -19,26 +12,16 @@ export interface SubagentRun {
   agentName: string;
   status: SubagentStatus;
 
-  /** 入力のダイジェスト（再実行判定用） */
   inputDigest: string;
-
-  /** ツール実行記録 */
   toolCalls: ToolCallRecord[];
-
-  /** チェックポイント状態（タスク固有） */
   checkpoint: Record<string, unknown>;
-
-  /** タイムスタンプ */
   createdAt: Date;
   startedAt?: Date;
   endedAt?: Date;
-
-  /** 復旧用 */
-  sessionId?: string; // SDK sessionId（補助的）
+  sessionId?: string;
   error?: string;
 }
 
-/** X運用のチェックポイント */
 export interface XPostCheckpoint {
   articleId: string;
   phase:
@@ -51,7 +34,6 @@ export interface XPostCheckpoint {
     | "completed";
   generatedPosts?: GeneratedPost[];
   bestPostId?: string;
-  /** 投稿済みID（二重投稿防止） */
   publishedPostIds?: string[];
   refinementCount: number;
 }
@@ -74,7 +56,6 @@ export interface PostEvaluationResult {
   suggestions: string[];
 }
 
-/** シリアライズ用の型（Date → string変換） */
 export interface SubagentRunSerialized {
   id: string;
   agentName: string;

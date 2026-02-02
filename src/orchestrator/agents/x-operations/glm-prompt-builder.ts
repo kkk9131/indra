@@ -1,9 +1,3 @@
-/**
- * GLM用プロンプトビルダー
- *
- * X投稿生成用のプロンプトをGLM向けに生成する
- */
-
 export interface ArticleInfo {
   id: string;
   title: string;
@@ -25,9 +19,6 @@ export class GLMPromptBuilder {
     tone: "engaging",
   };
 
-  /**
-   * 記事情報からGLM用プロンプトを生成
-   */
   buildPrompt(article: ArticleInfo, options?: GLMPromptOptions): string {
     const opts = { ...this.defaultOptions, ...options };
 
@@ -79,9 +70,6 @@ ${article.content}
 \`\`\``;
   }
 
-  /**
-   * トーンの説明を取得
-   */
   private getToneDescription(
     tone: "informative" | "engaging" | "provocative",
   ): string {
@@ -93,9 +81,6 @@ ${article.content}
     return descriptions[tone];
   }
 
-  /**
-   * GLM出力をパース
-   */
   parseOutput(output: string): Array<{
     id: string;
     text: string;

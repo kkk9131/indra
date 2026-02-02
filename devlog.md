@@ -2,6 +2,82 @@
 
 ---
 
+## 2026-02-02 10:16 [IMPL] チャットUIリサーチコマンド追加
+
+### 実装内容
+
+- [IMPL] `src/channels/gateway/handlers/research.ts`: research.createハンドラー新規作成
+  - researchWorkflow.execute()を呼び出し、Discord経由と同じ処理を実行
+- [IMPL] `src/channels/gateway/handlers/index.ts`: ハンドラー登録追加
+- [IMPL] `ui/src/services/ws-client.ts`: researchCreateメソッド + 型定義追加
+- [IMPL] `ui/src/ui/chat-ui.ts`: `/research` コマンド認識
+  - `handleResearchCommand()`: コマンド処理
+  - `sendResearchRequest()`: WebSocket通信
+  - `updateStreamingMessage()`: メッセージ更新ヘルパー
+- [REFACTOR] code-simplifierでコード簡素化
+
+### 成功
+
+- ビルド通過: `pnpm build` エラーなし
+- チャットUIで `/research トピック` と入力するとリサーチ実行可能に
+
+### 次回TODO
+
+- [ ] **Discordレポートチャンネルへの通知機能**
+  - どの経路（Discord/チャットUI）からリサーチしても、専用チャンネルに通知
+  - 参考: `src/orchestrator/analytics/discord-notifier.ts`
+  - 参考: `src/orchestrator/agents/research/workflow.ts`
+
+### 関連コミット
+
+- `5c8e98c feat(chat-ui): add /research command for chat interface`
+
+---
+
+## 2026-02-02 02:17 [IMPL] レポート表示UI + Gateway API実装
+
+### 実装内容
+
+- [IMPL] `src/channels/gateway/services/reports.ts`: ReportsService
+  - `listReports()`: agent-output/research-\* からレポート一覧取得
+  - `getReport(id)`: レポート全文取得（パストラバーサル対策付き）
+  - `parseReportId()` ヘルパーで重複ロジック統合
+- [IMPL] `src/channels/gateway/handlers/reports.ts`: reports.list / reports.get ハンドラー
+- [IMPL] `ui/src/ui/report-page.ts`: Litコンポーネント
+  - Markdown全文表示（marked + DOMPurify）
+  - レポート一覧 → 詳細表示の遷移
+- [IMPL] `ui/src/ui/sidebar-nav.ts`: 「Reports」ナビゲーション追加
+- [IMPL] `src/orchestrator/agents/research/workflow.ts`: LogCollector統合
+  - execution ログ（start/end/error）
+  - outcome ログ（report成果物）
+- [IMPL] `src/channels/slack/`: Slack連携モジュール追加
+- [REFACTOR] code-simplifierでコード簡素化
+- [TEST] リサーチレポート作成テスト: Claude Skills Guide
+
+### 成功
+
+- ビルド通過: `pnpm build` エラーなし
+- UI動作確認: http://localhost:3048/ でレポート表示成功
+- レポート生成: `agent-output/research-20260202-Claude-Skills-Guide/report.md`
+
+### 学び
+
+- **dist/dataディレクトリの自動生成**
+  - SQLiteの初期化時にディレクトリが必要
+  - TypeScriptの`__dirname`はdist基準で解決される
+- **marked + DOMPurifyの組み合わせ**
+  - markedでMarkdown→HTML変換
+  - DOMPurifyでXSS対策（サニタイズ）
+  - dompurifyは自前で型定義を持つため@types不要
+
+### 関連コミット
+
+- `7ca94f7 feat(reports): add report viewing UI and Gateway API`
+- `56634a3 style: format code with prettier`
+- `b9ee16a refactor: simplify reports and workflow code`
+
+---
+
 ## 2026-02-02 00:05 [IMPL] SubagentRegistryハイブリッドアーキテクチャ実装
 
 ### 実装内容

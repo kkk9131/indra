@@ -9,10 +9,13 @@ import {
   type ReportSummary,
   type ReportDetail,
 } from "../services/ws-client.js";
+import "./xpost-modal.js";
+import type { ContentInput } from "./xpost-modal.js";
 
 const refreshIcon = svg`<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>`;
 const backIcon = svg`<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>`;
 const fileIcon = svg`<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/>`;
+const xIcon = svg`<path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>`;
 
 @customElement("indra-report-page")
 export class ReportPageElement extends LitElement {
@@ -279,6 +282,29 @@ export class ReportPageElement extends LitElement {
       text-decoration: underline;
     }
 
+    .post-x-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: none;
+      background: #000;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .post-x-btn:hover {
+      background: #333;
+    }
+
+    .post-x-btn svg {
+      width: 16px;
+      height: 16px;
+      fill: #fff;
+    }
+
     .report-content table {
       width: 100%;
       border-collapse: collapse;
@@ -312,6 +338,9 @@ export class ReportPageElement extends LitElement {
 
   @state()
   private error: string | null = null;
+
+  @state()
+  private xpostContent: ContentInput | null = null;
 
   private boundHandleConnected = this.handleConnected.bind(this);
 
@@ -380,6 +409,22 @@ export class ReportPageElement extends LitElement {
 
   private handleBack(): void {
     this.selectedReport = null;
+  }
+
+  private handleOpenXpostModal(): void {
+    if (!this.selectedReport) return;
+
+    this.xpostContent = {
+      id: `report_${this.selectedReport.id}`,
+      title: this.selectedReport.topic,
+      url: "",
+      content: this.selectedReport.content,
+      summary: this.selectedReport.content.slice(0, 500),
+    };
+  }
+
+  private handleCloseXpostModal(): void {
+    this.xpostContent = null;
   }
 
   private formatSize(bytes: number): string {
@@ -476,6 +521,13 @@ export class ReportPageElement extends LitElement {
                   <svg viewBox="0 0 24 24">${backIcon}</svg>
                   Back
                 </button>
+                <button
+                  class="post-x-btn"
+                  @click="${this.handleOpenXpostModal}"
+                  title="Generate X Post"
+                >
+                  <svg viewBox="0 0 24 24">${xIcon}</svg>
+                </button>
               `
             : html`
                 <button
@@ -491,6 +543,15 @@ export class ReportPageElement extends LitElement {
       </div>
 
       ${isDetailView ? this.renderDetail() : this.renderList()}
+      ${this.xpostContent
+        ? html`
+            <indra-xpost-modal
+              .contentInput="${this.xpostContent}"
+              @close="${this.handleCloseXpostModal}"
+              @approved="${this.handleCloseXpostModal}"
+            ></indra-xpost-modal>
+          `
+        : null}
     `;
   }
 }

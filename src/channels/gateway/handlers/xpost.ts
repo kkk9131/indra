@@ -1,8 +1,7 @@
 import type { WebSocket } from "ws";
 
 import type { RequestFrame } from "../protocol/index.js";
-import type { XPostWorkflowOptions } from "../../../capabilities/social/x/index.js";
-import type { XpostService } from "../services/xpost.js";
+import type { XpostService, ContentInput } from "../services/xpost.js";
 
 export interface XpostHandlerContext {
   xpost: XpostService;
@@ -16,17 +15,12 @@ export function handleXpostGenerate(
   ws: WebSocket,
   frame: RequestFrame,
 ): void {
-  const { articleId, options } = frame.params as {
+  const { articleId } = frame.params as {
     articleId: string;
-    options?: XPostWorkflowOptions;
   };
 
   const result = ctx.xpost.generate(
     articleId,
-    options,
-    (event) => {
-      ctx.broadcast("xpost.progress", { articleId, ...event });
-    },
     (workflowResult) => {
       ctx.broadcast("xpost.completed", workflowResult);
     },
@@ -43,5 +37,37 @@ export function handleXpostGenerate(
   }
 
   // 即座に「開始しました」を返す
-  ctx.sendSuccess(ws, frame.id, { status: "started" });
+  ctx.sendSuccess(ws, frame.id, { status: "started", runId: result.runId });
+}
+
+export function handleXpostGenerateFromContent(
+  ctx: XpostHandlerContext,
+  ws: WebSocket,
+  frame: RequestFrame,
+): void {
+  const input = frame.params as ContentInput;
+
+  if (!input.id || !input.title || !input.content) {
+    ctx.sendError(
+      ws,
+      frame.id,
+      "INVALID_PARAMS",
+      "id, title, and content are required",
+    );
+    return;
+  }
+
+  const result = ctx.xpost.generateFromContent(
+    input,
+    (workflowResult) => {
+      ctx.broadcast("xpost.completed", workflowResult);
+    },
+    (error) => {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      ctx.broadcast("xpost.failed", { id: input.id, error: errorMessage });
+    },
+  );
+
+  ctx.sendSuccess(ws, frame.id, { status: "started", runId: result.runId });
 }

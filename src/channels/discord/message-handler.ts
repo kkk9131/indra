@@ -203,8 +203,12 @@ export class MessageHandler {
           await message.reply(
             `🔍 「${intent.prompt}」についてリサーチを開始します...`,
           );
-          // リサーチワークフローの実行は Gateway 経由で行う
-          // 現時点では通知のみ
+          const result = await this.gateway.researchForDiscord(intent.prompt);
+          if (result.success) {
+            await message.reply(`✅ レポート完成: ${result.outputPath}`);
+          } else {
+            await message.reply(`❌ エラー: ${result.error}`);
+          }
           break;
         }
 

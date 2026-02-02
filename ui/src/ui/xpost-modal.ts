@@ -397,9 +397,6 @@ export class XPostModalElement extends LitElement {
   private progress = 0;
 
   @state()
-  private stage: string = "started";
-
-  @state()
   private message = "ワークフロー開始中...";
 
   @state()
@@ -423,8 +420,6 @@ export class XPostModalElement extends LitElement {
     wsClient.addEventListener("xpost.progress", this.boundHandleProgress);
     wsClient.addEventListener("xpost.completed", this.boundHandleCompleted);
     wsClient.addEventListener("xpost.failed", this.boundHandleFailed);
-
-    // Start the workflow
     this.startWorkflow();
   }
 
@@ -450,7 +445,7 @@ export class XPostModalElement extends LitElement {
       } else if (this.article) {
         await wsClient.xpostGenerate({ articleId: this.article.id });
       }
-    } catch (error) {
+    } catch (error: unknown) {
       this.result = {
         success: false,
         articleId: this.sourceId,
@@ -465,14 +460,12 @@ export class XPostModalElement extends LitElement {
     const event = e as CustomEvent<XPostProgressEvent>;
     if (event.detail?.articleId === this.sourceId) {
       this.progress = event.detail.progress;
-      this.stage = event.detail.stage;
       this.message = event.detail.message;
     }
   }
 
   private handleCompleted(e: Event): void {
     const event = e as CustomEvent<XPostWorkflowResult>;
-    // runId でマッチするか、articleId でマッチする場合に処理
     const detail = event.detail;
     if (detail?.articleId === this.sourceId || detail?.runId) {
       this.result = event.detail;
@@ -522,7 +515,6 @@ export class XPostModalElement extends LitElement {
     this.approving = true;
 
     try {
-      // Add post directly to approval queue (without LLM regeneration)
       await wsClient.postAdd(
         "x",
         { text: selectedPost.text },

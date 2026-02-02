@@ -123,7 +123,6 @@ export class AgentSDKProvider implements LLMProvider {
     const signal = options?.signal;
     const hooks = options?.hooks;
 
-    // Check if cancelled before starting
     if (signal?.aborted) {
       const reason =
         signal.reason instanceof Error
@@ -134,8 +133,6 @@ export class AgentSDKProvider implements LLMProvider {
       return;
     }
 
-    // Note: Full streaming input with images will be supported in future SDK versions.
-    // For now, we extract text content from multimodal messages.
     const textMessages = this.normalizeToTextMessages(messages);
     const queryOptions = this.buildAgentQueryOptions(
       textMessages,
@@ -143,7 +140,6 @@ export class AgentSDKProvider implements LLMProvider {
       agentOpts,
     );
 
-    // Log if images were present but stripped
     if (hasImageContent(messages)) {
       console.warn(
         "[AgentSDK] Images in messages are not yet fully supported by the SDK. Text content was extracted.",
@@ -154,7 +150,6 @@ export class AgentSDKProvider implements LLMProvider {
 
     try {
       for await (const message of query(queryOptions)) {
-        // Check for cancellation
         if (signal?.aborted) {
           const reason =
             signal.reason instanceof Error
@@ -165,7 +160,6 @@ export class AgentSDKProvider implements LLMProvider {
           return;
         }
 
-        // Handle assistant text messages
         if (message.type === "assistant" && message.message?.content) {
           const content = message.message.content as unknown[];
           for (const block of content) {
@@ -183,7 +177,6 @@ export class AgentSDKProvider implements LLMProvider {
           }
         }
 
-        // Handle tool results
         if (message.type === "user" && message.message?.content) {
           const content = message.message.content as unknown[];
           for (const block of content) {
@@ -203,7 +196,6 @@ export class AgentSDKProvider implements LLMProvider {
           yield { type: "turn_complete", turnNumber };
         }
 
-        // Handle final result
         if (
           message.type === "result" &&
           message.subtype === "success" &&
@@ -269,7 +261,6 @@ export class AgentSDKProvider implements LLMProvider {
     } = {
       model: this.resolveModel(options),
       maxTurns: agentOpts.maxTurns ?? 10,
-      // Enable Skills from filesystem
       cwd: process.cwd(),
       settingSources: ["user", "project"],
     };
