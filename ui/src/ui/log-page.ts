@@ -98,22 +98,25 @@ export class LogPageElement extends LitElement {
       padding: 4px;
       background: white;
       border-radius: 12px;
-      width: fit-content;
+      overflow-x: auto;
+      max-width: 100%;
+      flex-wrap: wrap;
     }
 
     .tab {
-      padding: 8px 20px;
+      padding: 6px 12px;
       border-radius: 8px;
       border: none;
       background: transparent;
       color: var(--text-secondary, #636e72);
       font-family: inherit;
-      font-size: 14px;
+      font-size: 12px;
       font-weight: 500;
       cursor: pointer;
       transition:
         background 0.2s,
         color 0.2s;
+      white-space: nowrap;
     }
 
     .tab:hover {
@@ -515,10 +518,52 @@ export class LogPageElement extends LitElement {
             Agent
           </button>
           <button
-            class="tab ${this.filter === "prompt" ? "active" : ""}"
-            @click="${() => this.handleTabClick("prompt")}"
+            class="tab ${this.filter === "execution" ? "active" : ""}"
+            @click="${() => this.handleTabClick("execution")}"
           >
-            Prompt
+            Execution
+          </button>
+          <button
+            class="tab ${this.filter === "api" ? "active" : ""}"
+            @click="${() => this.handleTabClick("api")}"
+          >
+            API
+          </button>
+          <button
+            class="tab ${this.filter === "approval" ? "active" : ""}"
+            @click="${() => this.handleTabClick("approval")}"
+          >
+            Approval
+          </button>
+          <button
+            class="tab ${this.filter === "scheduler" ? "active" : ""}"
+            @click="${() => this.handleTabClick("scheduler")}"
+          >
+            Scheduler
+          </button>
+          <button
+            class="tab ${this.filter === "browser" ? "active" : ""}"
+            @click="${() => this.handleTabClick("browser")}"
+          >
+            Browser
+          </button>
+          <button
+            class="tab ${this.filter === "auth" ? "active" : ""}"
+            @click="${() => this.handleTabClick("auth")}"
+          >
+            Auth
+          </button>
+          <button
+            class="tab ${this.filter === "memory" ? "active" : ""}"
+            @click="${() => this.handleTabClick("memory")}"
+          >
+            Memory
+          </button>
+          <button
+            class="tab ${this.filter === "user" ? "active" : ""}"
+            @click="${() => this.handleTabClick("user")}"
+          >
+            User
           </button>
           <button
             class="tab ${this.filter === "system" ? "active" : ""}"

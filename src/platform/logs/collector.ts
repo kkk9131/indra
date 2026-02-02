@@ -9,6 +9,15 @@ import type {
   OutcomeType,
   OutcomeStage,
   OutcomeContent,
+  ApiMethod,
+  ApprovalAction,
+  LogError,
+  ApprovalContent,
+  SchedulerAction,
+  BrowserAction,
+  AuthAction,
+  MemoryAction,
+  UserAction,
 } from "./types.js";
 
 export interface LogCollectorOptions {
@@ -127,6 +136,149 @@ export class LogCollector {
       outcomeContent: content,
       previousOutcomeId,
       metadata,
+    });
+  }
+
+  addApiLog(params: {
+    service: string;
+    endpoint: string;
+    method: ApiMethod;
+    requestData?: unknown;
+    responseStatus?: number;
+    responseData?: unknown;
+    duration?: number;
+    error?: LogError;
+  }): LogEntry {
+    return this.addEntry({
+      type: "api",
+      apiService: params.service,
+      apiEndpoint: params.endpoint,
+      apiMethod: params.method,
+      apiRequestData: params.requestData,
+      apiResponseStatus: params.responseStatus,
+      apiResponseData: params.responseData,
+      apiDuration: params.duration,
+      apiError: params.error,
+    });
+  }
+
+  addApprovalLog(params: {
+    approvalId: string;
+    action: ApprovalAction;
+    platform?: string;
+    content?: ApprovalContent;
+    approvedBy?: string;
+    reason?: string;
+  }): LogEntry {
+    return this.addEntry({
+      type: "approval",
+      approvalId: params.approvalId,
+      approvalAction: params.action,
+      approvalPlatform: params.platform,
+      approvalContent: params.content,
+      approvalBy: params.approvedBy,
+      approvalReason: params.reason,
+    });
+  }
+
+  addSchedulerLog(params: {
+    taskId: string;
+    taskType?: string;
+    taskName?: string;
+    action: SchedulerAction;
+    cronExpression?: string;
+    duration?: number;
+    nextRunAt?: string;
+    error?: LogError;
+  }): LogEntry {
+    return this.addEntry({
+      type: "scheduler",
+      schedulerTaskId: params.taskId,
+      schedulerTaskType: params.taskType,
+      schedulerTaskName: params.taskName,
+      schedulerAction: params.action,
+      schedulerCronExpression: params.cronExpression,
+      schedulerDuration: params.duration,
+      schedulerNextRunAt: params.nextRunAt,
+      schedulerError: params.error,
+    });
+  }
+
+  addBrowserLog(params: {
+    action: BrowserAction;
+    session?: string;
+    url?: string;
+    selector?: string;
+    input?: string;
+    duration?: number;
+    error?: LogError;
+  }): LogEntry {
+    return this.addEntry({
+      type: "browser",
+      browserAction: params.action,
+      browserSession: params.session,
+      browserUrl: params.url,
+      browserSelector: params.selector,
+      browserInput: params.input,
+      browserDuration: params.duration,
+      browserError: params.error,
+    });
+  }
+
+  addAuthLog(params: {
+    action: AuthAction;
+    provider?: string;
+    userId?: string;
+    scopes?: string[];
+    expiresAt?: string;
+    error?: LogError;
+  }): LogEntry {
+    return this.addEntry({
+      type: "auth",
+      authAction: params.action,
+      authProvider: params.provider,
+      authUserId: params.userId,
+      authScopes: params.scopes,
+      authExpiresAt: params.expiresAt,
+      authError: params.error,
+    });
+  }
+
+  addMemoryLog(params: {
+    action: MemoryAction;
+    filePath?: string;
+    chunkCount?: number;
+    tokenCount?: number;
+    query?: string;
+    resultCount?: number;
+    duration?: number;
+  }): LogEntry {
+    return this.addEntry({
+      type: "memory",
+      memoryAction: params.action,
+      memoryFilePath: params.filePath,
+      memoryChunkCount: params.chunkCount,
+      memoryTokenCount: params.tokenCount,
+      memoryQuery: params.query,
+      memoryResultCount: params.resultCount,
+      memoryDuration: params.duration,
+    });
+  }
+
+  addUserLog(params: {
+    action: UserAction;
+    channel?: string;
+    input?: string;
+    command?: string;
+    response?: string;
+  }): LogEntry {
+    return this.addEntry({
+      type: "user",
+      userAction: params.action,
+      userChannel: params.channel,
+      userInput: params.input,
+      userCommand: params.command,
+      userResponse: params.response,
     });
   }
 

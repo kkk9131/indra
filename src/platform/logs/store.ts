@@ -90,6 +90,60 @@ export class LogStore {
       { name: "outcomeContent", type: "TEXT" },
       { name: "previousOutcomeId", type: "TEXT" },
       { name: "metadata", type: "TEXT" },
+      // api log columns
+      { name: "apiService", type: "TEXT" },
+      { name: "apiEndpoint", type: "TEXT" },
+      { name: "apiMethod", type: "TEXT" },
+      { name: "apiRequestData", type: "TEXT" },
+      { name: "apiResponseStatus", type: "INTEGER" },
+      { name: "apiResponseData", type: "TEXT" },
+      { name: "apiDuration", type: "INTEGER" },
+      { name: "apiError", type: "TEXT" },
+      // approval log columns
+      { name: "approvalId", type: "TEXT" },
+      { name: "approvalAction", type: "TEXT" },
+      { name: "approvalPlatform", type: "TEXT" },
+      { name: "approvalContent", type: "TEXT" },
+      { name: "approvalBy", type: "TEXT" },
+      { name: "approvalReason", type: "TEXT" },
+      // scheduler log columns
+      { name: "schedulerTaskId", type: "TEXT" },
+      { name: "schedulerTaskType", type: "TEXT" },
+      { name: "schedulerTaskName", type: "TEXT" },
+      { name: "schedulerAction", type: "TEXT" },
+      { name: "schedulerCronExpression", type: "TEXT" },
+      { name: "schedulerDuration", type: "INTEGER" },
+      { name: "schedulerNextRunAt", type: "TEXT" },
+      { name: "schedulerError", type: "TEXT" },
+      // browser log columns
+      { name: "browserAction", type: "TEXT" },
+      { name: "browserSession", type: "TEXT" },
+      { name: "browserUrl", type: "TEXT" },
+      { name: "browserSelector", type: "TEXT" },
+      { name: "browserInput", type: "TEXT" },
+      { name: "browserDuration", type: "INTEGER" },
+      { name: "browserError", type: "TEXT" },
+      // auth log columns
+      { name: "authAction", type: "TEXT" },
+      { name: "authProvider", type: "TEXT" },
+      { name: "authUserId", type: "TEXT" },
+      { name: "authScopes", type: "TEXT" },
+      { name: "authExpiresAt", type: "TEXT" },
+      { name: "authError", type: "TEXT" },
+      // memory log columns
+      { name: "memoryAction", type: "TEXT" },
+      { name: "memoryFilePath", type: "TEXT" },
+      { name: "memoryChunkCount", type: "INTEGER" },
+      { name: "memoryTokenCount", type: "INTEGER" },
+      { name: "memoryQuery", type: "TEXT" },
+      { name: "memoryResultCount", type: "INTEGER" },
+      { name: "memoryDuration", type: "INTEGER" },
+      // user log columns
+      { name: "userAction", type: "TEXT" },
+      { name: "userChannel", type: "TEXT" },
+      { name: "userInput", type: "TEXT" },
+      { name: "userCommand", type: "TEXT" },
+      { name: "userResponse", type: "TEXT" },
     ];
 
     for (const col of newColumns) {
@@ -99,35 +153,35 @@ export class LogStore {
     }
   }
 
+  private parseJsonField(value: unknown): unknown {
+    return typeof value === "string" ? JSON.parse(value) : value;
+  }
+
   private parseRow(row: Record<string, unknown>): LogEntry | null {
-    // Parse JSON fields
-    const transformedRow = {
-      ...row,
-      toolInput:
-        typeof row.toolInput === "string"
-          ? JSON.parse(row.toolInput)
-          : row.toolInput,
-      executionConfig:
-        typeof row.executionConfig === "string"
-          ? JSON.parse(row.executionConfig)
-          : row.executionConfig,
-      executionResult:
-        typeof row.executionResult === "string"
-          ? JSON.parse(row.executionResult)
-          : row.executionResult,
-      executionError:
-        typeof row.executionError === "string"
-          ? JSON.parse(row.executionError)
-          : row.executionError,
-      outcomeContent:
-        typeof row.outcomeContent === "string"
-          ? JSON.parse(row.outcomeContent)
-          : row.outcomeContent,
-      metadata:
-        typeof row.metadata === "string"
-          ? JSON.parse(row.metadata)
-          : row.metadata,
-    };
+    const jsonFields = [
+      "toolInput",
+      "executionConfig",
+      "executionResult",
+      "executionError",
+      "outcomeContent",
+      "metadata",
+      "apiRequestData",
+      "apiResponseData",
+      "apiError",
+      "approvalContent",
+      "schedulerError",
+      "browserError",
+      "authScopes",
+      "authError",
+    ];
+
+    const transformedRow = { ...row };
+    for (const field of jsonFields) {
+      if (row[field] !== undefined) {
+        transformedRow[field] = this.parseJsonField(row[field]);
+      }
+    }
+
     const parsed = LogEntrySchema.safeParse(transformedRow);
     return parsed.success ? parsed.data : null;
   }
@@ -167,6 +221,60 @@ export class LogStore {
       entry.outcomeContent ? JSON.stringify(entry.outcomeContent) : null,
       entry.previousOutcomeId ?? null,
       entry.metadata ? JSON.stringify(entry.metadata) : null,
+      // api log
+      entry.apiService ?? null,
+      entry.apiEndpoint ?? null,
+      entry.apiMethod ?? null,
+      entry.apiRequestData ? JSON.stringify(entry.apiRequestData) : null,
+      entry.apiResponseStatus ?? null,
+      entry.apiResponseData ? JSON.stringify(entry.apiResponseData) : null,
+      entry.apiDuration ?? null,
+      entry.apiError ? JSON.stringify(entry.apiError) : null,
+      // approval log
+      entry.approvalId ?? null,
+      entry.approvalAction ?? null,
+      entry.approvalPlatform ?? null,
+      entry.approvalContent ? JSON.stringify(entry.approvalContent) : null,
+      entry.approvalBy ?? null,
+      entry.approvalReason ?? null,
+      // scheduler log
+      entry.schedulerTaskId ?? null,
+      entry.schedulerTaskType ?? null,
+      entry.schedulerTaskName ?? null,
+      entry.schedulerAction ?? null,
+      entry.schedulerCronExpression ?? null,
+      entry.schedulerDuration ?? null,
+      entry.schedulerNextRunAt ?? null,
+      entry.schedulerError ? JSON.stringify(entry.schedulerError) : null,
+      // browser log
+      entry.browserAction ?? null,
+      entry.browserSession ?? null,
+      entry.browserUrl ?? null,
+      entry.browserSelector ?? null,
+      entry.browserInput ?? null,
+      entry.browserDuration ?? null,
+      entry.browserError ? JSON.stringify(entry.browserError) : null,
+      // auth log
+      entry.authAction ?? null,
+      entry.authProvider ?? null,
+      entry.authUserId ?? null,
+      entry.authScopes ? JSON.stringify(entry.authScopes) : null,
+      entry.authExpiresAt ?? null,
+      entry.authError ? JSON.stringify(entry.authError) : null,
+      // memory log
+      entry.memoryAction ?? null,
+      entry.memoryFilePath ?? null,
+      entry.memoryChunkCount ?? null,
+      entry.memoryTokenCount ?? null,
+      entry.memoryQuery ?? null,
+      entry.memoryResultCount ?? null,
+      entry.memoryDuration ?? null,
+      // user log
+      entry.userAction ?? null,
+      entry.userChannel ?? null,
+      entry.userInput ?? null,
+      entry.userCommand ?? null,
+      entry.userResponse ?? null,
     ];
   }
 
@@ -176,9 +284,16 @@ export class LogStore {
         id, type, timestamp, sessionId, agentAction, tool, toolInput, toolResult,
         turnNumber, text, prompt, response, model, level, message,
         executionId, executionAction, executionConfig, input, executionResult, executionError,
-        outcomeId, outcomeType, outcomeStage, outcomeContent, previousOutcomeId, metadata
+        outcomeId, outcomeType, outcomeStage, outcomeContent, previousOutcomeId, metadata,
+        apiService, apiEndpoint, apiMethod, apiRequestData, apiResponseStatus, apiResponseData, apiDuration, apiError,
+        approvalId, approvalAction, approvalPlatform, approvalContent, approvalBy, approvalReason,
+        schedulerTaskId, schedulerTaskType, schedulerTaskName, schedulerAction, schedulerCronExpression, schedulerDuration, schedulerNextRunAt, schedulerError,
+        browserAction, browserSession, browserUrl, browserSelector, browserInput, browserDuration, browserError,
+        authAction, authProvider, authUserId, authScopes, authExpiresAt, authError,
+        memoryAction, memoryFilePath, memoryChunkCount, memoryTokenCount, memoryQuery, memoryResultCount, memoryDuration,
+        userAction, userChannel, userInput, userCommand, userResponse
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         type = excluded.type,
         timestamp = excluded.timestamp,
@@ -205,7 +320,54 @@ export class LogStore {
         outcomeStage = excluded.outcomeStage,
         outcomeContent = excluded.outcomeContent,
         previousOutcomeId = excluded.previousOutcomeId,
-        metadata = excluded.metadata
+        metadata = excluded.metadata,
+        apiService = excluded.apiService,
+        apiEndpoint = excluded.apiEndpoint,
+        apiMethod = excluded.apiMethod,
+        apiRequestData = excluded.apiRequestData,
+        apiResponseStatus = excluded.apiResponseStatus,
+        apiResponseData = excluded.apiResponseData,
+        apiDuration = excluded.apiDuration,
+        apiError = excluded.apiError,
+        approvalId = excluded.approvalId,
+        approvalAction = excluded.approvalAction,
+        approvalPlatform = excluded.approvalPlatform,
+        approvalContent = excluded.approvalContent,
+        approvalBy = excluded.approvalBy,
+        approvalReason = excluded.approvalReason,
+        schedulerTaskId = excluded.schedulerTaskId,
+        schedulerTaskType = excluded.schedulerTaskType,
+        schedulerTaskName = excluded.schedulerTaskName,
+        schedulerAction = excluded.schedulerAction,
+        schedulerCronExpression = excluded.schedulerCronExpression,
+        schedulerDuration = excluded.schedulerDuration,
+        schedulerNextRunAt = excluded.schedulerNextRunAt,
+        schedulerError = excluded.schedulerError,
+        browserAction = excluded.browserAction,
+        browserSession = excluded.browserSession,
+        browserUrl = excluded.browserUrl,
+        browserSelector = excluded.browserSelector,
+        browserInput = excluded.browserInput,
+        browserDuration = excluded.browserDuration,
+        browserError = excluded.browserError,
+        authAction = excluded.authAction,
+        authProvider = excluded.authProvider,
+        authUserId = excluded.authUserId,
+        authScopes = excluded.authScopes,
+        authExpiresAt = excluded.authExpiresAt,
+        authError = excluded.authError,
+        memoryAction = excluded.memoryAction,
+        memoryFilePath = excluded.memoryFilePath,
+        memoryChunkCount = excluded.memoryChunkCount,
+        memoryTokenCount = excluded.memoryTokenCount,
+        memoryQuery = excluded.memoryQuery,
+        memoryResultCount = excluded.memoryResultCount,
+        memoryDuration = excluded.memoryDuration,
+        userAction = excluded.userAction,
+        userChannel = excluded.userChannel,
+        userInput = excluded.userInput,
+        userCommand = excluded.userCommand,
+        userResponse = excluded.userResponse
     `);
   }
 

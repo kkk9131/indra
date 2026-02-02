@@ -89,9 +89,23 @@ export type NewsSource =
   | "x-account"
   | "github-changelog";
 
-// Log types - these mirror the backend types in src/logs/types.ts
+// Log types - these mirror the backend types in src/platform/logs/types.ts
 // Keeping separate to avoid cross-package dependencies
-export type LogType = "agent" | "prompt" | "system" | "execution" | "outcome";
+
+export type LogType =
+  | "agent"
+  | "prompt"
+  | "system"
+  | "execution"
+  | "outcome"
+  | "api"
+  | "approval"
+  | "scheduler"
+  | "browser"
+  | "auth"
+  | "memory"
+  | "user";
+
 export type AgentActionType =
   | "text"
   | "tool_start"
@@ -99,20 +113,60 @@ export type AgentActionType =
   | "turn_complete"
   | "done";
 
+export type ApiMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
+
+export type ApprovalAction =
+  | "create"
+  | "approve"
+  | "reject"
+  | "schedule"
+  | "post"
+  | "fail";
+
+export type SchedulerAction =
+  | "execute"
+  | "start"
+  | "complete"
+  | "skip"
+  | "fail";
+
+export type BrowserAction =
+  | "open"
+  | "click"
+  | "fill"
+  | "screenshot"
+  | "navigate"
+  | "close";
+
+export type AuthAction = "login" | "logout" | "refresh" | "revoke" | "fail";
+
+export type MemoryAction = "index" | "search" | "save" | "delete" | "flush";
+
+export type UserAction = "command" | "chat" | "navigate" | "approve" | "reject";
+
+/** Common error interface */
+export interface LogError {
+  code: string;
+  message: string;
+}
+
 export interface LogEntry {
   id: string;
   type: LogType;
   timestamp: string;
   sessionId?: string;
+  // agent log
   agentAction?: AgentActionType;
   tool?: string;
   toolInput?: unknown;
   toolResult?: string;
   turnNumber?: number;
   text?: string;
+  // prompt log
   prompt?: string;
   response?: string;
   model?: string;
+  // system log
   level?: "info" | "warn" | "error";
   message?: string;
   // execution log
@@ -131,10 +185,7 @@ export interface LogEntry {
     totalTokens: number;
     duration: number;
   };
-  executionError?: {
-    code: string;
-    message: string;
-  };
+  executionError?: LogError;
   // outcome log
   outcomeId?: string;
   outcomeType?: "xpost" | "report" | "chat" | "file" | "other";
@@ -146,6 +197,60 @@ export interface LogEntry {
     files?: Array<{ path: string; hash: string; size: number }>;
   };
   previousOutcomeId?: string;
+  // api log
+  apiService?: string;
+  apiEndpoint?: string;
+  apiMethod?: ApiMethod;
+  apiRequestData?: unknown;
+  apiResponseStatus?: number;
+  apiResponseData?: unknown;
+  apiDuration?: number;
+  apiError?: LogError;
+  // approval log
+  approvalId?: string;
+  approvalAction?: ApprovalAction;
+  approvalPlatform?: string;
+  approvalContent?: { text: string; preview?: string };
+  approvalBy?: string;
+  approvalReason?: string;
+  // scheduler log
+  schedulerTaskId?: string;
+  schedulerTaskType?: string;
+  schedulerTaskName?: string;
+  schedulerAction?: SchedulerAction;
+  schedulerCronExpression?: string;
+  schedulerDuration?: number;
+  schedulerNextRunAt?: string;
+  schedulerError?: LogError;
+  // browser log
+  browserAction?: BrowserAction;
+  browserSession?: string;
+  browserUrl?: string;
+  browserSelector?: string;
+  browserInput?: string;
+  browserDuration?: number;
+  browserError?: LogError;
+  // auth log
+  authAction?: AuthAction;
+  authProvider?: string;
+  authUserId?: string;
+  authScopes?: string[];
+  authExpiresAt?: string;
+  authError?: LogError;
+  // memory log
+  memoryAction?: MemoryAction;
+  memoryFilePath?: string;
+  memoryChunkCount?: number;
+  memoryTokenCount?: number;
+  memoryQuery?: string;
+  memoryResultCount?: number;
+  memoryDuration?: number;
+  // user log
+  userAction?: UserAction;
+  userChannel?: string;
+  userInput?: string;
+  userCommand?: string;
+  userResponse?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -194,6 +299,67 @@ export function formatLogForExport(log: LogEntry): Record<string, unknown> {
       if (log.previousOutcomeId) base.previousOutcomeId = log.previousOutcomeId;
       if (log.metadata) base.metadata = log.metadata;
       if (log.sessionId) base.session = log.sessionId;
+      break;
+    case "api":
+      if (log.apiService) base.service = log.apiService;
+      if (log.apiEndpoint) base.endpoint = log.apiEndpoint;
+      if (log.apiMethod) base.method = log.apiMethod;
+      if (log.apiRequestData) base.request = log.apiRequestData;
+      if (log.apiResponseStatus) base.status = log.apiResponseStatus;
+      if (log.apiResponseData) base.response = log.apiResponseData;
+      if (log.apiDuration) base.duration = log.apiDuration;
+      if (log.apiError) base.error = log.apiError;
+      break;
+    case "approval":
+      if (log.approvalId) base.approvalId = log.approvalId;
+      if (log.approvalAction) base.action = log.approvalAction;
+      if (log.approvalPlatform) base.platform = log.approvalPlatform;
+      if (log.approvalContent) base.content = log.approvalContent;
+      if (log.approvalBy) base.approvedBy = log.approvalBy;
+      if (log.approvalReason) base.reason = log.approvalReason;
+      break;
+    case "scheduler":
+      if (log.schedulerTaskId) base.taskId = log.schedulerTaskId;
+      if (log.schedulerTaskType) base.taskType = log.schedulerTaskType;
+      if (log.schedulerTaskName) base.taskName = log.schedulerTaskName;
+      if (log.schedulerAction) base.action = log.schedulerAction;
+      if (log.schedulerCronExpression) base.cron = log.schedulerCronExpression;
+      if (log.schedulerDuration) base.duration = log.schedulerDuration;
+      if (log.schedulerNextRunAt) base.nextRunAt = log.schedulerNextRunAt;
+      if (log.schedulerError) base.error = log.schedulerError;
+      break;
+    case "browser":
+      if (log.browserAction) base.action = log.browserAction;
+      if (log.browserSession) base.session = log.browserSession;
+      if (log.browserUrl) base.url = log.browserUrl;
+      if (log.browserSelector) base.selector = log.browserSelector;
+      if (log.browserInput) base.input = log.browserInput;
+      if (log.browserDuration) base.duration = log.browserDuration;
+      if (log.browserError) base.error = log.browserError;
+      break;
+    case "auth":
+      if (log.authAction) base.action = log.authAction;
+      if (log.authProvider) base.provider = log.authProvider;
+      if (log.authUserId) base.userId = log.authUserId;
+      if (log.authScopes) base.scopes = log.authScopes;
+      if (log.authExpiresAt) base.expiresAt = log.authExpiresAt;
+      if (log.authError) base.error = log.authError;
+      break;
+    case "memory":
+      if (log.memoryAction) base.action = log.memoryAction;
+      if (log.memoryFilePath) base.filePath = log.memoryFilePath;
+      if (log.memoryChunkCount) base.chunkCount = log.memoryChunkCount;
+      if (log.memoryTokenCount) base.tokenCount = log.memoryTokenCount;
+      if (log.memoryQuery) base.query = log.memoryQuery;
+      if (log.memoryResultCount) base.resultCount = log.memoryResultCount;
+      if (log.memoryDuration) base.duration = log.memoryDuration;
+      break;
+    case "user":
+      if (log.userAction) base.action = log.userAction;
+      if (log.userChannel) base.channel = log.userChannel;
+      if (log.userInput) base.input = log.userInput;
+      if (log.userCommand) base.command = log.userCommand;
+      if (log.userResponse) base.response = log.userResponse;
       break;
   }
 
