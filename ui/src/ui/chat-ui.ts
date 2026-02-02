@@ -728,8 +728,106 @@ export class ChatUIElement extends LitElement {
     );
   }
 
+  private async handleResearchCommand(topic: string): Promise<void> {
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: `/research ${topic}`,
+      timestamp: Date.now(),
+    };
+
+    const assistantMessage: Message = {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: `リサーチを開始します: "${topic}"`,
+      timestamp: Date.now(),
+      isStreaming: true,
+    };
+
+    this.messages = [...this.messages, userMessage, assistantMessage];
+    this.currentStreamingId = assistantMessage.id;
+    this.isSending = true;
+    this.inputText = "";
+    this.scrollToBottom();
+
+    try {
+      const result = await this.sendResearchRequest(topic);
+      const content = result.success
+        ? `リサーチが完了しました。\n\nトピック: ${topic}\n出力: ${result.outputPath ?? "N/A"}\nRun ID: ${result.runId}`
+        : `リサーチに失敗しました。\n\nエラー: ${result.error ?? "Unknown error"}`;
+
+      this.updateStreamingMessage(assistantMessage.id, content, false);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      this.updateStreamingMessage(
+        assistantMessage.id,
+        `リサーチに失敗しました。\n\nエラー: ${errorMessage}`,
+        false,
+      );
+    } finally {
+      this.currentStreamingId = undefined;
+      this.isSending = false;
+      this.scrollToBottom();
+    }
+  }
+
+  private sendResearchRequest(topic: string): Promise<{
+    success: boolean;
+    runId: string;
+    outputPath?: string;
+    error?: string;
+  }> {
+    return new Promise((resolve, reject) => {
+      const requestId = crypto.randomUUID();
+
+      const handler = (event: MessageEvent): void => {
+        try {
+          const frame = JSON.parse(event.data);
+          if (frame.type === "res" && frame.id === requestId) {
+            this.ws?.removeEventListener("message", handler);
+            if (frame.ok) {
+              resolve(frame.payload);
+            } else {
+              reject(new Error(frame.error?.message ?? "Request failed"));
+            }
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      };
+
+      this.ws?.addEventListener("message", handler);
+      this.ws?.send(
+        JSON.stringify({
+          type: "req",
+          id: requestId,
+          method: "research.create",
+          params: { topic, depth: "normal", language: "ja" },
+        }),
+      );
+    });
+  }
+
+  private updateStreamingMessage(
+    messageId: string,
+    content: string,
+    isStreaming: boolean,
+  ): void {
+    this.messages = this.messages.map((msg) =>
+      msg.id === messageId ? { ...msg, content, isStreaming } : msg,
+    );
+  }
+
   private sendMessage(): void {
     if (this.isSendDisabled) {
+      return;
+    }
+
+    // Check for /research command
+    const researchMatch = this.inputText.match(/^\/research\s+(.+)/i);
+    if (researchMatch) {
+      this.handleResearchCommand(researchMatch[1].trim());
       return;
     }
 

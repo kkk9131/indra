@@ -477,12 +477,26 @@ export class WSClientService extends EventTarget {
   async xpostGenerate(params: {
     articleId: string;
     options?: { targetScore?: number; maxRetries?: number };
-  }): Promise<{ status: string }> {
+  }): Promise<{ status: string; runId: string }> {
     const res = await this.sendRequest("xpost.generate", params);
     if (!res.ok) {
       throw new Error(res.error?.message ?? "Failed to generate X post");
     }
-    return res.payload as { status: string };
+    return res.payload as { status: string; runId: string };
+  }
+
+  async xpostGenerateFromContent(params: {
+    id: string;
+    title: string;
+    url: string;
+    content: string;
+    summary?: string;
+  }): Promise<{ status: string; runId: string }> {
+    const res = await this.sendRequest("xpost.generateFromContent", params);
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to generate X post");
+    }
+    return res.payload as { status: string; runId: string };
   }
 
   // ===== Chat API Methods =====
@@ -610,6 +624,20 @@ export class WSClientService extends EventTarget {
     }
     return (res.payload as { report: ReportDetail }).report;
   }
+
+  // ===== Research API Methods =====
+
+  async researchCreate(params: {
+    topic: string;
+    depth?: "quick" | "normal" | "deep";
+    language?: "ja" | "en";
+  }): Promise<ResearchCreateResult> {
+    const res = await this.sendRequest("research.create", params);
+    if (!res.ok) {
+      throw new Error(res.error?.message ?? "Failed to create research");
+    }
+    return res.payload as ResearchCreateResult;
+  }
 }
 
 // ===== Evaluation Types =====
@@ -675,6 +703,15 @@ export interface ReportSummary {
 
 export interface ReportDetail extends ReportSummary {
   content: string;
+}
+
+// ===== Research Types =====
+
+export interface ResearchCreateResult {
+  success: boolean;
+  runId: string;
+  outputPath?: string;
+  error?: string;
 }
 
 // Singleton instance

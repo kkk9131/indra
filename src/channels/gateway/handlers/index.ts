@@ -39,7 +39,10 @@ import {
   handleNewsSourceToggle,
   handleNewsSourceFetchNow,
 } from "./news-source.js";
-import { handleXpostGenerate } from "./xpost.js";
+import {
+  handleXpostGenerate,
+  handleXpostGenerateFromContent,
+} from "./xpost.js";
 import {
   handleSessionsList,
   handleSessionsGet,
@@ -69,6 +72,7 @@ import {
   handleEvalGraderStatus,
 } from "./evaluation.js";
 import { handleReportsList, handleReportsGet } from "./reports.js";
+import { handleResearchCreate } from "./research.js";
 import type { GatewayContext, RequestHandler } from "./context.js";
 
 export type { GatewayContext, RequestHandler } from "./context.js";
@@ -163,6 +167,12 @@ export function createHandlerRegistry(
 
   const reportsCtx = {
     reports: ctx.services.reports,
+    sendSuccess: ctx.sendSuccess,
+    sendError: ctx.sendError,
+    getErrorMessage: ctx.getErrorMessage,
+  };
+
+  const researchCtx = {
     sendSuccess: ctx.sendSuccess,
     sendError: ctx.sendError,
     getErrorMessage: ctx.getErrorMessage,
@@ -279,6 +289,10 @@ export function createHandlerRegistry(
       (ws, frame) => handleNewsSourceFetchNow(newsSourceCtx, ws, frame),
     ],
     ["xpost.generate", (ws, frame) => handleXpostGenerate(xpostCtx, ws, frame)],
+    [
+      "xpost.generateFromContent",
+      (ws, frame) => handleXpostGenerateFromContent(xpostCtx, ws, frame),
+    ],
     ["sessions.list", (ws, frame) => handleSessionsList(sessionCtx, ws, frame)],
     ["sessions.get", (ws, frame) => handleSessionsGet(sessionCtx, ws, frame)],
     [
@@ -361,5 +375,10 @@ export function createHandlerRegistry(
     // Reports handlers
     ["reports.list", (ws, frame) => handleReportsList(reportsCtx, ws, frame)],
     ["reports.get", (ws, frame) => handleReportsGet(reportsCtx, ws, frame)],
+    // Research handlers
+    [
+      "research.create",
+      (ws, frame) => handleResearchCreate(researchCtx, ws, frame),
+    ],
   ]);
 }
