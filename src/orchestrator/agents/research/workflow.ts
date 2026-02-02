@@ -1,9 +1,3 @@
-/**
- * リサーチワークフロー
- *
- * トピックを調査してレポートを作成するワークフローを管理
- */
-
 import { promises as fs } from "fs";
 import { type RunRegistry } from "../subagent/index.js";
 import { createResearchAgents } from "./agents.js";
@@ -19,9 +13,6 @@ import type {
   ExecutionError,
 } from "../../../platform/logs/index.js";
 
-/**
- * ログ記録用のコールバック型
- */
 export interface ResearchLogCallbacks {
   saveExecutionLog: (
     executionId: string,
@@ -83,23 +74,14 @@ export class ResearchWorkflow {
 
   constructor(private registry: RunRegistry) {}
 
-  /**
-   * LLMプロバイダーを設定
-   */
   setLLMProvider(provider: LLMProvider): void {
     this.llmProvider = provider;
   }
 
-  /**
-   * ログ記録コールバックを設定
-   */
   setLogCallbacks(callbacks: ResearchLogCallbacks): void {
     this.logCallbacks = callbacks;
   }
 
-  /**
-   * リサーチを実行
-   */
   async execute(config: ResearchConfig): Promise<ResearchResult> {
     const { topic } = config;
     const depth = config.depth ?? "normal";
@@ -183,9 +165,6 @@ export class ResearchWorkflow {
     }
   }
 
-  /**
-   * ワークフローを実行
-   */
   private async executeWorkflow(
     runId: string,
     config: ResearchConfig,
@@ -320,9 +299,6 @@ export class ResearchWorkflow {
     };
   }
 
-  /**
-   * 未完了のワークフローを復旧
-   */
   async recoverPendingRuns(): Promise<void> {
     const pending = await this.registry.getPending();
 

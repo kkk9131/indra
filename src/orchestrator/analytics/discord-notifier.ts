@@ -3,6 +3,16 @@ import type { DailyReport } from "./types.js";
 import type { NewsReport } from "./news-report-scheduler.js";
 import type { NotificationData } from "../../channels/discord/types.js";
 
+export interface ResearchReport {
+  id: string;
+  topic: string;
+  outputPath: string;
+  generatedAt: string;
+  summary?: string;
+  keyPoints?: string[];
+  webUiUrl?: string;
+}
+
 /**
  * DailyReportからDiscord Embedを生成
  */
@@ -197,5 +207,46 @@ export function createNotificationEmbed(data: NotificationData): APIEmbed {
     color,
     fields: fields.length > 0 ? fields : undefined,
     timestamp: new Date().toISOString(),
+  };
+}
+
+export function createResearchReportEmbed(report: ResearchReport): APIEmbed {
+  const description = report.summary ?? `**トピック:** ${report.topic}`;
+
+  const fields: APIEmbed["fields"] = [
+    {
+      name: "📁 出力先",
+      value: `\`${report.outputPath}\``,
+      inline: false,
+    },
+  ];
+
+  if (report.keyPoints && report.keyPoints.length > 0) {
+    const keyPointsText = report.keyPoints
+      .slice(0, 5)
+      .map((point) => `• ${point}`)
+      .join("\n");
+    fields.push({
+      name: "📝 キーポイント",
+      value: keyPointsText.slice(0, 1024),
+      inline: false,
+    });
+  }
+
+  if (report.webUiUrl) {
+    fields.push({
+      name: "🔗 詳細",
+      value: `[Web UIで閲覧](${report.webUiUrl})`,
+      inline: false,
+    });
+  }
+
+  return {
+    title: "📚 リサーチレポート完成",
+    description,
+    color: 0x9b59b6,
+    fields,
+    footer: { text: "Research Report" },
+    timestamp: report.generatedAt,
   };
 }

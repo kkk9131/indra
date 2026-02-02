@@ -913,23 +913,15 @@ export class GatewayServer {
     outputPath?: string;
     error?: string;
   }> {
-    const result = await researchWorkflow.execute({
+    return researchWorkflow.execute({
       topic,
       depth: "normal",
       language: "ja",
     });
-
-    // Discord reportチャンネルに通知
-    if (result.success && result.outputPath) {
-      await this.notifyResearchReport(topic, result.outputPath);
-    }
-
-    return result;
   }
 
   /**
    * ResearchReport をDiscordに送信
-   * workflow.ts の notifyDiscord コールバックから呼び出される
    */
   private async sendResearchReportToDiscord(
     report: ResearchReport,
@@ -939,40 +931,12 @@ export class GatewayServer {
       return;
     }
 
-    // Web UI URLを追加
-    const webUiUrl = `http://localhost:5173/reports/${report.id}`;
-    const enrichedReport = {
+    const enrichedReport: ResearchReport = {
       ...report,
-      webUiUrl,
+      webUiUrl: `http://localhost:5173/reports/${report.id}`,
     };
 
     const embed = createResearchReportEmbed(enrichedReport);
-    const result = await this.discordBot.sendEmbed(channelId, embed);
-    if (!result.success) {
-      console.error("Failed to send research report to Discord:", result.error);
-    }
-  }
-
-  /**
-   * @deprecated sendResearchReportToDiscord を使用してください
-   * researchForDiscord から呼び出される旧メソッド（後方互換性のため残す）
-   */
-  private async notifyResearchReport(
-    topic: string,
-    outputPath: string,
-  ): Promise<void> {
-    const channelId = process.env.DISCORD_REPORT_CHANNEL_ID;
-    if (!channelId || !this.discordBot?.isReady()) {
-      return;
-    }
-
-    const embed = createResearchReportEmbed({
-      id: crypto.randomUUID(),
-      topic,
-      outputPath,
-      generatedAt: new Date().toISOString(),
-    });
-
     const result = await this.discordBot.sendEmbed(channelId, embed);
     if (!result.success) {
       console.error("Failed to send research report to Discord:", result.error);
