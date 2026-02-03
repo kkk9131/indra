@@ -1,26 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import Database from "better-sqlite3";
 import { SessionManager, SessionSchema } from "./session.js";
 
-// Skip SQLite tests in Vitest (native module binding issues)
-const describeWithSQLite = process.env.VITEST ? describe.skip : describe;
-import Database from "better-sqlite3";
-import { unlinkSync, existsSync } from "fs";
-import path from "path";
-import { tmpdir } from "os";
-
-describeWithSQLite("SessionManager", () => {
+describe("SessionManager", () => {
   let manager: SessionManager;
-  let dbPath: string;
+  let dataDir: string;
 
-  beforeEach(() => {
-    dbPath = path.join(tmpdir(), `test_sessions_${Date.now()}.db`);
-    manager = new SessionManager(path.dirname(dbPath));
+  beforeEach(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "indra-sessions-"));
+    manager = new SessionManager(dataDir);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     manager.close();
-    if (existsSync(dbPath)) {
-      unlinkSync(dbPath);
+    if (dataDir) {
+      await rm(dataDir, { recursive: true, force: true });
     }
   });
 
@@ -113,7 +110,7 @@ describeWithSQLite("SessionManager", () => {
       const oldTime = Date.now() - 3600000;
       const session = manager.create("cli");
 
-      const db = new Database(dbPath);
+      const db = new Database(join(dataDir, "sessions.db"));
       db.prepare("UPDATE sessions SET lastSeenAt = ? WHERE id = ?").run(
         oldTime,
         session.id,
