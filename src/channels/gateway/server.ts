@@ -4,6 +4,7 @@ import { WebSocketServer } from "ws";
 import { createServer, type Server } from "http";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { handleHonoRequest } from "./http-adapter.js";
 import {
   SessionManager,
   TranscriptManager,
@@ -202,7 +203,13 @@ export class GatewayServer {
   constructor(port = 3001) {
     this.port = port;
     this.app = new Hono();
-    this.httpServer = createServer();
+    this.httpServer = createServer((req, res) => {
+      handleHonoRequest(this.app, req, res).catch((error) => {
+        console.error("HTTP handler error:", error);
+        res.statusCode = 500;
+        res.end("Internal Server Error");
+      });
+    });
     this.wss = new WebSocketServer({ server: this.httpServer });
     this.sessionManager = new SessionManager();
     this.transcriptManager = new TranscriptManager();

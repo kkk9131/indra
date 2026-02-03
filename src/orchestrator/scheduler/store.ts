@@ -1,7 +1,8 @@
 import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import { existsSync } from "node:fs";
 import { CronExpressionParser } from "cron-parser";
 
 import type {
@@ -10,19 +11,21 @@ import type {
   UpdateTaskParams,
 } from "./types.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = join(__dirname, "../../data/sessions.db");
+const DB_PATH = join(homedir(), ".indra", "sessions.db");
 
 /**
  * スケジュールストア（SQLite CRUD）
  */
 export class ScheduleStore {
   private db: Database.Database;
+  private dbPath: string;
 
   constructor(dbPath?: string) {
-    this.db = new Database(dbPath ?? DB_PATH);
+    this.dbPath = dbPath ?? DB_PATH;
+    this.db = new Database(this.dbPath);
     this.db.pragma("journal_mode = WAL");
     this.initTable();
+    this.migrateLegacySchedules();
   }
 
   private initTable(): void {
@@ -41,6 +44,101 @@ export class ScheduleStore {
         updated_at TEXT NOT NULL
       )
     `);
+  }
+
+  private migrateLegacySchedules(): void {
+    const legacyPaths = [
+      join(process.cwd(), "data", "sessions.db"),
+      join(process.cwd(), "dist", "data", "sessions.db"),
+    ];
+
+    for (const legacyPath of legacyPaths) {
+      if (legacyPath === this.dbPath) {
+        continue;
+      }
+      if (!existsSync(legacyPath)) {
+        continue;
+      }
+
+      try {
+        const legacyDb = new Database(legacyPath, {
+          readonly: true,
+          fileMustExist: true,
+        });
+
+        const table = legacyDb
+          .prepare(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'scheduled_tasks'",
+          )
+          .get();
+        if (!table) {
+          legacyDb.close();
+          continue;
+        }
+
+        const rows = legacyDb
+          .prepare("SELECT * FROM scheduled_tasks")
+          .all() as Array<{
+          id: string;
+          name: string;
+          description: string | null;
+          task_type: string;
+          cron_expression: string;
+          enabled: number;
+          last_run_at: string | null;
+          next_run_at: string | null;
+          config: string | null;
+          created_at: string;
+          updated_at: string;
+        }>;
+
+        if (rows.length === 0) {
+          legacyDb.close();
+          continue;
+        }
+
+        const insert = this.db.prepare(`
+          INSERT OR IGNORE INTO scheduled_tasks (
+            id, name, description, task_type, cron_expression,
+            enabled, last_run_at, next_run_at, config, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        let inserted = 0;
+        const transaction = this.db.transaction(() => {
+          for (const row of rows) {
+            const result = insert.run(
+              row.id,
+              row.name,
+              row.description ?? null,
+              row.task_type,
+              row.cron_expression,
+              row.enabled,
+              row.last_run_at ?? null,
+              row.next_run_at ?? null,
+              row.config ?? null,
+              row.created_at,
+              row.updated_at,
+            );
+            inserted += result.changes;
+          }
+        });
+
+        transaction();
+        legacyDb.close();
+
+        if (inserted > 0) {
+          console.log(
+            `ScheduleStore: Migrated ${inserted} task(s) from ${legacyPath}`,
+          );
+        }
+      } catch (error) {
+        console.warn(
+          "ScheduleStore: Failed to migrate legacy schedules:",
+          error,
+        );
+      }
+    }
   }
 
   /**

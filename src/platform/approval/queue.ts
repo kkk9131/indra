@@ -23,6 +23,7 @@ const ALL_STATUSES: readonly ApprovalStatus[] = [
   "rejected",
   "posted",
   "scheduled",
+  "failed",
 ];
 
 type ItemUpdates = Partial<
@@ -124,14 +125,26 @@ export class ApprovalQueue {
   list(status?: ApprovalStatus): ApprovalItem[] {
     const statuses = status ? [status] : ALL_STATUSES;
     const items: ApprovalItem[] = [];
+    const dirs = new Map<string, ApprovalStatus[]>();
 
     for (const s of statuses) {
       const dir = this.getStatusDir(s);
+      const existing = dirs.get(dir);
+      if (existing) {
+        existing.push(s);
+      } else {
+        dirs.set(dir, [s]);
+      }
+    }
+
+    for (const [dir, dirStatuses] of dirs) {
       if (!existsSync(dir)) continue;
 
       for (const file of readdirSync(dir).filter((f) => f.endsWith(".json"))) {
         const item = this.readItem(join(dir, file));
-        if (item) items.push(item);
+        if (!item) continue;
+        if (!dirStatuses.includes(item.status)) continue;
+        items.push(item);
       }
     }
 
