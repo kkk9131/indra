@@ -15,8 +15,8 @@ import type {
   DailyStats,
   DailyReport,
   ReportItem,
-} from "../../../../src/analytics/types.js";
-import type { NewsArticle } from "../../../../src/news/types.js";
+} from "../../../../src/orchestrator/analytics/types.js";
+import type { NewsArticle } from "../../../../src/capabilities/content/news/types.js";
 
 interface ReportInput {
   stats: DailyStats;

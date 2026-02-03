@@ -10,8 +10,8 @@
 import { parseArgs } from "node:util";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { LogEntry } from "../../../../src/logs/types.js";
-import type { DailyStats } from "../../../../src/analytics/types.js";
+import type { LogEntry } from "../../../../src/platform/logs/types.js";
+import type { DailyStats } from "../../../../src/orchestrator/analytics/types.js";
 
 interface LogInput {
   logs: LogEntry[];

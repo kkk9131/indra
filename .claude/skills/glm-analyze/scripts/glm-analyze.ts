@@ -13,11 +13,11 @@ import { parseArgs } from "node:util";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
-import type { LogEntry } from "../../../../src/logs/types.js";
+import type { LogEntry } from "../../../../src/platform/logs/types.js";
 import type {
   DailyStats,
   ReportItem,
-} from "../../../../src/analytics/types.js";
+} from "../../../../src/orchestrator/analytics/types.js";
 
 // .env ファイルを ~/.claude/.env から読み込む
 const envPath = join(homedir(), ".claude", ".env");

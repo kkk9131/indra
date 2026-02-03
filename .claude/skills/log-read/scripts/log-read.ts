@@ -9,8 +9,8 @@
 import { parseArgs } from "node:util";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { LogStore } from "../../../../src/logs/store.js";
-import type { LogEntry } from "../../../../src/logs/types.js";
+import { LogStore } from "../../../../src/platform/logs/store.js";
+import type { LogEntry } from "../../../../src/platform/logs/types.js";
 
 interface LogReadOutput {
   logs: LogEntry[];
