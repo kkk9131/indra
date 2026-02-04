@@ -24,6 +24,12 @@ export {
   type IdempotencyRecord,
 } from "./idempotency.js";
 
+export type {
+  XPostCheckpoint,
+  GeneratedPost,
+  PostEvaluationResult,
+} from "./types.js";
+
 export {
   XOperationsWorkflow,
   type NewsArticle,

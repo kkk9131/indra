@@ -2,6 +2,139 @@
 
 ---
 
+## 2026-02-04 23:48 [IMPL] P4-1: BaseWorkflow基盤実装
+
+**実装内容:**
+
+- `BaseWorkflow<TInput, TOutput, TCheckpoint>` 抽象基底クラスを新規作成（`subagent/base-workflow.ts`）
+- 共通ライフサイクル: `execute()` テンプレートメソッド（start → initCheckpoint → run → complete/fail）
+- リトライ機構: `executeWithRetry()` 指数バックオフ、retryableErrorsフィルタ対応
+- SDK実行ヘルパー: `runAgent()` ストリーミング+共通ログ出力
+- ライフサイクルフック: `setLifecycleHooks()` (onStart/onComplete/onFail/onRetry)
+- `XOperationsWorkflow` を BaseWorkflow 継承に移行（`createPost()` Idempotencyラッパー維持）
+- `ResearchWorkflow` を BaseWorkflow 継承に移行（`execute()` override でログコールバック統合、旧API互換維持）
+- ドメイン型分離: `XPostCheckpoint`/`GeneratedPost`/`PostEvaluationResult` を `x-operations/types.ts` に移動、`subagent/types.ts` から re-export で後方互換維持
+- ユニットテスト14ケース作成（ライフサイクル/フック/リトライ/復旧/updatePhase/ensureLLMProvider）
+- code-simplifier によるリファクタ: 未使用import削除、`toErrorMessage()`ヘルパー抽出、ネスト三項演算子をif/elseに、`finally`でフック復元
+
+**成功:**
+
+- 全12テストファイル86テスト全パス、型エラー0件
+- 既存のpublic API（`createPost()`, `execute()`）を破壊せず移行完了
+- Gateway連携（xpost, research ハンドラー）のインポートパス変更なし
+- 新エージェント追加時は `run()` + `agentName` + `initCheckpoint()` の3メソッド実装のみで済む
+
+**設計決定:**
+
+- TCheckpoint の型制約を `extends Record<string, unknown>` から制約なしに変更（TypeScriptのindex signatureとinterface非互換問題を回避）
+- リトライはワークフロー全体単位（MVP）。フェーズ単位の再開は将来拡張
+- ResearchWorkflow は `execute()` を override して旧動作互換（エラー時に例外ではなく success=false を返す）
+
+**学び:**
+
+- TypeScript の interface は index signature (`[key: string]: unknown`) を暗黙的に持たないため、`extends Record<string, unknown>` 制約はドメイン型の interface に適用できない。ジェネリクス制約は緩めにするか `type` で定義する
+- テンプレートメソッドパターンでの override 時、基底クラスの `execute()` が例外を投げる設計と、サブクラスが例外を吸収して Result 型で返す旧 API の共存には override + try/catch ラッパーが有効
+- ライフサイクルフックを override 内で差し替える場合、`finally` で元に戻さないと次回呼び出しで状態がリークする
+
+**関連タスク:** P4-1（BaseWorkflow基盤）- 全4サブタスク完了
+
+---
+
+## 2026-02-04 23:00 [REFACTOR] エージェント構成見直し・要件定義整合
+
+**実装内容:**
+
+- エージェント構成の全体調査（依存関係・データフロー・レイヤー構造）
+- 要件定義と実装の乖離を特定（6項目の不整合を検出）
+- デッドコード削除: `src/capabilities/social/x/` ディレクトリ全体（workflow-service.ts, system-prompt.ts, types.ts, index.ts）
+- 要件定義（01-requirements.md）更新: F-012をBaseWorkflow基盤に変更、F-015リサーチレポート追加、GLM連携追加
+- タスク一覧（tasks.md）更新: Phase状態を実態に合わせ更新、Phase 3R（リサーチAgent）追加、P4-1をBaseWorkflowパターンに書き換え、クリティカルパス更新
+- アーキテクチャ（02-architecture.md）更新: エージェント層図にresearch追加・note-writing削除、BaseWorkflow追加、ディレクトリ構成更新
+- CLAUDE.md更新: 進捗テーブル・ディレクトリ構成・リンク修正
+
+**成功:**
+
+- X投稿ワークフローの重複実装を検出・デッドコード削除（`capabilities/social/x/` は外部参照ゼロ）
+- 「汎用ワークフローエンジン vs エージェント固有ワークフロー」の設計判断を完了
+- 全ドキュメント（4ファイル）を実態と整合させた
+
+**設計決定:**
+
+- ワークフロー方針: 汎用JSONパイプラインエンジンは採用せず、BaseWorkflow基底クラス + subagent共通基盤の強化で対応
+  - 理由: LLMエージェントの処理は非定型でJSON定義との相性が悪い、現状エージェント2個で汎用エンジンは過剰
+  - 段階的アプローチ: 2-3個→共通基盤、5個〜→基底クラス、10個〜→宣言的定義を検討
+
+**学び:**
+
+- LLMワークフローの宣言的定義（LangGraph等）は有効なアプローチだが、エージェント2-3個の段階ではエンジン設計・保守コストが再利用メリットを上回る。まずライフサイクル（start/complete/fail/retry）の共通化から始め、規模に応じて宣言的定義を検討する
+- デッドコード検出は「exportされているが外部importゼロ」で判定できる。index.tsでre-exportされていても実質未使用のケースがある
+- ドキュメントの実態乖離は「Phase状態の更新漏れ」が最も多い。先行実装した機能のPhase状態を更新する運用が必要
+
+**関連タスク:** P4-1（BaseWorkflow基盤）
+
+---
+
+## 2026-02-04 22:58 [DESIGN] Discord/Slack/Web UI の役割分担設計
+
+**実装内容:**
+
+- Discord/Slack連携の現状調査（実装済み機能の棚卸し）
+- 3つの分担パターンを比較検討（用途別 / コンテキスト別 / プライマリ・セカンダリ）
+- Discord/Slack/Web UI各プラットフォームの強み分析
+- 「能動/受動」軸での役割分担設計を策定
+
+**成功:**
+
+- 既存実装の全体像を把握（Discord/Slack共にBot基盤・通知・コマンド・承認フローが実装済み）
+- 入力/出力で分けるのではなく、能動/受動で分ける方が自然という結論に到達
+
+**設計決定:**
+
+- 分担方針: 能動/受動の軸で分離
+  - **Slack**: 能動的操作の場（指示→結果→承認、全てここで完結）
+  - **Discord**: 受動的通知の場（indraの自律活動報告、アラート、分析レポート）
+  - **Web UI**: 俯瞰の場（履歴・ログ・設定・ダッシュボード）
+- 「タスク投げかけ」と「結果閲覧」を別プラットフォームに分けるのはUX上問題がある（コンテキストスイッチ、紐付け分断）
+- 自分が起点のタスクは1プラットフォームで完結させ、indraが起点のタスク（スケジュール実行等）の通知は別で受け取る設計
+
+**学び:**
+
+- プラットフォーム分担は「入力/出力」ではなく「能動/受動」で分けるのが自然。ユーザーが起点の操作は同じ場所で完結させないとコンテキストスイッチコストが大きい
+- Discord/Slackの強みの違い: Discordはリアルタイム通知・Embed・チャネル構造、Slackは Block Kit UI・検索・既存ツール連携
+
+**関連タスク:** P7-1, P7-2（Phase 7: チャンネル拡張）
+
+---
+
+## 2026-02-04 21:30 [FIX] Research/X-Operations ワークフローのエラー修正
+
+**実装内容:**
+
+- [FIX] `src/orchestrator/agents/research/agents.ts` — toolsから`Skill`を除去（Agent SDKネスト呼び出しによるAPI 400エラー防止）、modelを`opus`に変更
+- [FIX] `src/orchestrator/agents/x-operations/workflow.ts` — X投稿生成結果のパース改善（3段階フォールバック: finalResult → toolResults → tempファイル）
+- [FIX] `src/orchestrator/agents/x-operations/workflow.ts` — プロンプト強化（JSON出力を明示的に要求）、`extractJsonFromResult`で言語タグなしコードブロックも検出
+- [FIX] `src/orchestrator/agents/x-operations/workflow.ts` — ワークフロー開始時にtempディレクトリをクリア（前回実行の結果残存防止）
+- [FIX] `src/orchestrator/agents/x-operations/workflow.ts` + `src/channels/gateway/services/xpost.ts` — 承認キュー多重登録を修正（ワークフロー内の`approvalQueue.create()`を削除、UI側のみに一元化）
+
+**成功:**
+
+- Research Agent: `Skill`ツール除去でAPI 400 concurrencyエラー解消
+- X投稿: 正しいポスト内容がUIに表示されるようになった
+- 承認キュー: 重複登録が解消
+
+**失敗/課題:**
+
+- 最初のtempファイル読み込み修正では、前回実行の結果を誤って拾う問題が発生 → clearTempFilesで対処
+- `finalResult`のパースは依然としてLLMの出力形式に依存（JSONを返さないケースがある）
+
+**学び:**
+
+- Agent SDK `query()`はClaude Codeサブプロセスをspawnする。そのプロセス内で`Skill`ツールを使うとネストしたClaude Codeプロセスが起動し、API並行ツール使用制限（400エラー）に抵触する
+- LLMの最終応答テキスト（`done`イベント）はプロンプトで指定したJSON形式ではなくMarkdown要約になることが多い。複数のパースソース（LLM応答 → ツール結果 → ファイル）を用意すべき
+- ワークフロー内で自動的に承認キューに追加する設計は、UI側にも追加ボタンがある場合に重複を招く。責務を一箇所に集約する
+
+---
+
 ## 2026-02-02 10:16 [IMPL] チャットUIリサーチコマンド追加
 
 ### 実装内容

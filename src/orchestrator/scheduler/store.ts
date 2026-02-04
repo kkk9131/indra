@@ -26,6 +26,7 @@ export class ScheduleStore {
     this.db.pragma("journal_mode = WAL");
     this.initTable();
     this.migrateLegacySchedules();
+    this.dedupeExactTasks();
   }
 
   private initTable(): void {
@@ -139,6 +140,85 @@ export class ScheduleStore {
         );
       }
     }
+  }
+
+  private dedupeExactTasks(): void {
+    const rows = this.db.prepare(
+      `
+        SELECT id, name, description, task_type, cron_expression, config, created_at, updated_at
+        FROM scheduled_tasks
+      `,
+    ).all() as Array<{
+      id: string;
+      name: string;
+      description: string | null;
+      task_type: string;
+      cron_expression: string;
+      config: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+
+    if (rows.length <= 1) {
+      return;
+    }
+
+    const keyFor = (row: (typeof rows)[number]) =>
+      [
+        row.task_type,
+        row.name,
+        row.description ?? "",
+        row.cron_expression,
+        row.config ?? "",
+      ].join("|");
+
+    const keepByKey = new Map<
+      string,
+      { id: string; updatedAt: string; createdAt: string }
+    >();
+    const toDelete: string[] = [];
+
+    for (const row of rows) {
+      const key = keyFor(row);
+      const existing = keepByKey.get(key);
+      if (!existing) {
+        keepByKey.set(key, {
+          id: row.id,
+          updatedAt: row.updated_at,
+          createdAt: row.created_at,
+        });
+        continue;
+      }
+
+      const existingStamp = existing.updatedAt || existing.createdAt;
+      const rowStamp = row.updated_at || row.created_at;
+      if (rowStamp > existingStamp) {
+        toDelete.push(existing.id);
+        keepByKey.set(key, {
+          id: row.id,
+          updatedAt: row.updated_at,
+          createdAt: row.created_at,
+        });
+      } else {
+        toDelete.push(row.id);
+      }
+    }
+
+    if (toDelete.length === 0) {
+      return;
+    }
+
+    const stmt = this.db.prepare(
+      "DELETE FROM scheduled_tasks WHERE id = ?",
+    );
+    const transaction = this.db.transaction((ids: string[]) => {
+      for (const id of ids) {
+        stmt.run(id);
+      }
+    });
+    transaction(toDelete);
+
+    console.log(`ScheduleStore: Deduped ${toDelete.length} task(s)`);
   }
 
   /**

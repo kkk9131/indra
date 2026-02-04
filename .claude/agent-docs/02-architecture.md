@@ -33,7 +33,7 @@
          └───────────────────────┘
 ```
 
-## 1.5 SubagentRegistry層（実行状態管理）
+## 1.5 エージェント層（BaseWorkflow + SubagentRegistry）
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -41,34 +41,35 @@
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
 │  │  agents: [                                                             │ │
 │  │    { name: "x-operations-agent", skills: ["x-post-*", ...] },          │ │
-│  │    { name: "note-writing-agent", skills: ["note-*", ...] },            │ │
+│  │    { name: "research-agent", skills: ["research-report"] },             │ │
 │  │  ]                                                                     │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 │                           │                                                  │
 │                           ▼                                                  │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                    Skills (ツールとして利用)                            │ │
+│  │                    Skills (プロンプト注入で利用)                        │ │
 │  │  .claude/skills/                                                       │ │
-│  │  ├─ x-post-structure/    ├─ note-outline/ (将来)                       │ │
-│  │  ├─ x-post-compose/      ├─ note-draft/ (将来)                         │ │
-│  │  ├─ x-algorithm-evaluate/└─ note-publish/ (将来)                       │ │
-│  │  └─ x-post-refine/                                                     │ │
+│  │  ├─ x-post-structure/    ├─ research-report/                           │ │
+│  │  ├─ x-post-compose/      ├─ log-read/                                  │ │
+│  │  ├─ x-algorithm-evaluate/├─ log-analyze/                               │ │
+│  │  ├─ x-post-refine/       └─ report-generate/                           │ │
+│  │  └─ news-content-fetch/                                                │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────┬──────────────────────────────────────────┘
                                    │
         ┌──────────────────────────┼──────────────────────────┐
         ▼                          ▼                          ▼
 ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
-│  x-operations/    │  │  note-writing/    │  │  future-agent/    │
-│  ├─ agents.ts     │  │  ├─ agents.ts     │  │  (将来)           │
-│  ├─ workflow.ts   │  │  ├─ workflow.ts   │  │                   │
-│  └─ idempotency   │  │  └─ article-mgr   │  │                   │
+│  x-operations/    │  │  research/        │  │  {new-agent}/     │
+│  ├─ agents.ts     │  │  ├─ agents.ts     │  │  extends          │
+│  ├─ workflow.ts   │  │  ├─ workflow.ts   │  │  BaseWorkflow     │
+│  └─ idempotency   │  │  └─ utils         │  │                   │
 └─────────┬─────────┘  └─────────┬─────────┘  └───────────────────┘
           └──────────────────────┴──────────────────┐
                                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         subagent/ (共通基盤)                                 │
-│  RunRegistry │ Checkpoint │ SDK Hooks                                       │
+│  BaseWorkflow │ RunRegistry │ Checkpoint │ SDK Hooks                        │
 └──────────────────────────────────┬──────────────────────────────────────────┘
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -197,3 +198,102 @@ agent:<agentId>:<sessionId>
 │  (投稿実行)      │
 └─────────────────┘
 ```
+
+## 5. ディレクトリ構成
+
+```
+src/
+├── capabilities/       # 機能ロジック
+│   └── content/
+│       └── news/       # ニュース取得・保存
+├── channels/           # 入出力
+│   ├── cli/
+│   ├── discord/
+│   └── gateway/
+├── integrations/       # 外部API連携
+├── orchestrator/       # LLM・スケジューラ統括
+│   ├── agents/         # エージェント管理基盤
+│   │   ├── subagent/       # 共通基盤（BaseWorkflow, RunRegistry等）
+│   │   ├── x-operations/   # X運用エージェント
+│   │   └── research/       # リサーチエージェント
+│   ├── analytics/
+│   ├── commands/
+│   ├── evaluation/
+│   ├── llm/
+│   └── scheduler/
+└── platform/           # 横断基盤
+    ├── approval/
+    ├── auth/
+    ├── config/
+    ├── infra/
+    ├── logs/
+    ├── memory/
+    └── tools/
+data/
+└── runs/               # 実行状態永続化（SDKセッションとは独立）
+```
+
+### 依存方向
+
+```
+channels → orchestrator → capabilities/integrations/platform
+```
+
+逆向き依存は禁止（例: `capabilities` → `channels`）
+
+### 運用方針
+
+- **単一責務**: capabilities・orchestrator・platform・channels・integrationsを混ぜない
+- **機能単位で増やす**: 新機能は `src/capabilities/<domain>/<feature>/` に追加
+- **Claude Code互換優先**: スキル/エージェントは `.claude/` 配下を正とする
+- **SDKセッションは使い捨て**: 「真実」は `data/runs/` に永続化
+
+## 6. 命名規則
+
+| 対象                 | 規則                    | 例                      |
+| -------------------- | ----------------------- | ----------------------- |
+| ディレクトリ         | lowercase / kebab-case  | `social/`, `x-post/`    |
+| ファイル             | kebab-case.ts           | `workflow-service.ts`   |
+| TypeScript 型/クラス | PascalCase              | `PostWorkflow`          |
+| skills               | `domain-feature-action` | `social-x-post-compose` |
+| agents               | `domain-role`           | `x-operations-agent`    |
+
+### capabilities ドメイン
+
+| ドメイン   | 用途                          |
+| ---------- | ----------------------------- |
+| `social/`  | X / note / YouTube など投稿系 |
+| `content/` | ニュース収集・要約・記事生成  |
+| `ops/`     | Gmail・管理・自動化           |
+| `calc/`    | 足場割付・計算・作図          |
+
+## 7. 機能追加フロー
+
+### 新エージェント追加
+
+1. `.claude/agents/{name}.md` にエージェント定義（frontmatter + プロンプト）
+2. `.claude/skills/{skill}/SKILL.md` に必要なスキルを定義
+3. `src/orchestrator/agents/{name}/` を作成:
+   - `agents.ts`: エージェント定義 + スキルローダー連携
+   - `workflow.ts`: BaseWorkflowを継承、ドメインロジックのみ実装
+   - `skills-loader.ts`: スキルファイル読み込み
+   - `index.ts`: 初期化・エクスポート
+4. `src/channels/gateway/` にハンドラー/サービスを追加
+
+### 既存機能の拡張
+
+1. `capabilities` 側で処理の粒度を増やす（関数/サービス追加）
+2. `orchestrator` のルーティングまたはコマンドで呼び出しを増やす
+3. 必要なら `skills` を追加して「再利用可能な作業手順」に切り出す
+
+## 8. Agents vs Skills
+
+| 概念      | 定義場所                                       | 役割                       |
+| --------- | ---------------------------------------------- | -------------------------- |
+| **Agent** | `.claude/agents/` + `src/orchestrator/agents/` | ワークフロー制御、状態管理 |
+| **Skill** | `.claude/skills/`                              | 単一タスク実行（ツール）   |
+
+- **Agent**: ワークフロー全体を統括し、複数のSkillを組み合わせてタスクを実行
+- **Skill**: 単一の作業手順（ツールとしてAgentに利用される）
+- **BaseWorkflow**: 共通ライフサイクル（start/complete/fail/retry）を提供する基底クラス
+- **SubagentRegistry**: 実行状態を追跡し、復旧可能性を担保する基盤

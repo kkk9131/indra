@@ -1,11 +1,9 @@
-import type { LLMProvider } from "../../llm/index.js";
-import {
-  type RunRegistry,
-  type XPostCheckpoint,
-  type GeneratedPost,
-} from "../subagent/index.js";
+import { promises as fs } from "fs";
+import { join } from "path";
+import type { RunRegistry } from "../subagent/index.js";
+import { BaseWorkflow } from "../subagent/base-workflow.js";
+import type { XPostCheckpoint, GeneratedPost } from "./types.js";
 import { IdempotencyManager } from "./idempotency.js";
-import { ApprovalQueue } from "../../../platform/approval/queue.js";
 import { createXOperationsAgents } from "./agents.js";
 
 export interface NewsArticle {
@@ -25,24 +23,38 @@ export interface XPostResult {
   error?: string;
 }
 
-export class XOperationsWorkflow {
-  private approvalQueue: ApprovalQueue;
-  private llmProvider: LLMProvider | null = null;
+export class XOperationsWorkflow extends BaseWorkflow<
+  NewsArticle,
+  XPostResult,
+  XPostCheckpoint
+> {
+  private idempotency: IdempotencyManager;
+  private static readonly MAX_RAW_RESULT_CHARS = 4000;
 
-  setLLMProvider(provider: LLMProvider): void {
-    this.llmProvider = provider;
+  constructor(registry: RunRegistry, idempotency: IdempotencyManager) {
+    super(registry);
+    this.idempotency = idempotency;
   }
 
-  constructor(
-    private registry: RunRegistry,
-    private idempotency: IdempotencyManager,
-    approvalQueue?: ApprovalQueue,
-  ) {
-    this.approvalQueue = approvalQueue ?? new ApprovalQueue();
+  protected get agentName(): string {
+    return "x-operations-agent";
   }
 
+  protected initCheckpoint(article: NewsArticle): XPostCheckpoint {
+    return {
+      articleId: article.id,
+      phase: "analyzing",
+      refinementCount: 0,
+    };
+  }
+
+  /**
+   * Idempotency付きの投稿作成（public API）
+   *
+   * BaseWorkflow.execute() をラップして冪等性を保証する。
+   */
   async createPost(article: NewsArticle): Promise<XPostResult> {
-    console.log(`[XOperationsWorkflow] Starting createPost for: ${article.id}`);
+    console.log(`[${this.agentName}] Starting createPost for: ${article.id}`);
 
     const idempotencyKey = this.idempotency.generateKey(
       article.id,
@@ -51,30 +63,13 @@ export class XOperationsWorkflow {
     const idempotencyCheck = this.idempotency.checkAndSet(idempotencyKey);
 
     if (idempotencyCheck.alreadyExecuted) {
-      console.log(`[XOperationsWorkflow] Already executed: ${article.id}`);
+      console.log(`[${this.agentName}] Already executed: ${article.id}`);
       return idempotencyCheck.result as XPostResult;
     }
 
     try {
-      const run = await this.registry.start("x-operations-agent", {
-        articleId: article.id,
-        articleTitle: article.title,
-      });
-      console.log(`[XOperationsWorkflow] Run started: ${run.id}`);
-
-      const initialCheckpoint: XPostCheckpoint = {
-        articleId: article.id,
-        phase: "analyzing",
-        refinementCount: 0,
-      };
-      await this.registry.updateCheckpoint(
-        run.id,
-        initialCheckpoint as unknown as Record<string, unknown>,
-      );
-
-      const result = await this.executeWorkflow(run.id, article);
+      const result = await this.execute(article);
       this.idempotency.recordSuccess(idempotencyKey, result);
-
       return result;
     } catch (error) {
       this.idempotency.clearOnFailure(idempotencyKey);
@@ -82,26 +77,53 @@ export class XOperationsWorkflow {
     }
   }
 
-  private async executeWorkflow(
+  /**
+   * ドメイン固有のワークフロー実行
+   *
+   * BaseWorkflow.execute() から呼ばれる。
+   * レジストリ管理（start/complete/fail）は基底クラスが担当。
+   */
+  protected async run(
     runId: string,
     article: NewsArticle,
   ): Promise<XPostResult> {
-    console.log(`[XOperationsWorkflow] executeWorkflow started: ${runId}`);
-
-    if (!this.llmProvider?.chatStreamWithAgent) {
-      return {
-        success: false,
-        runId,
-        error: "LLM provider with agent support not configured",
-      };
-    }
+    await this.clearTempFiles();
 
     const agents = await createXOperationsAgents();
     const agentDef = agents["x-operations-agent"];
 
-    await this.registry.updateCheckpoint(runId, { phase: "generating" });
+    await this.updatePhase(runId, "generating");
 
-    const prompt = `以下の記事からX投稿を作成してください。
+    const prompt = this.buildPrompt(article);
+
+    console.log(
+      `[${this.agentName}] Agent tools: ${agentDef.tools?.join(", ") ?? "none"}`,
+    );
+
+    const { finalResult, toolResults } = await this.runAgent(
+      runId,
+      prompt,
+      agentDef,
+      {
+        maxTurns: 15,
+        onEvent: async (event) => {
+          if (event.type === "tool_start" && event.tool === "Skill") {
+            const skillArg = String(event.input ?? "");
+            if (skillArg.includes("evaluate")) {
+              await this.updatePhase(runId, "evaluating");
+            } else if (skillArg.includes("refine")) {
+              await this.updatePhase(runId, "refining");
+            }
+          }
+        },
+      },
+    );
+
+    return this.processResult(runId, article, finalResult, toolResults);
+  }
+
+  private buildPrompt(article: NewsArticle): string {
+    return `以下の記事からX投稿を作成してください。
 
 ## ワークフロー
 1. glm-generate スキルを使って5つの投稿候補を生成
@@ -122,7 +144,10 @@ ${article.content.slice(0, 2000)}${article.content.length > 2000 ? "..." : ""}
 記事「${article.title}」から5つのX投稿候補を生成。
 各投稿は280文字以内、日本語、エンゲージメント重視。
 
-## 最終出力形式
+## 最終出力形式（必須）
+全ての処理が完了したら、最後のメッセージは必ず以下のJSON形式のみを出力してください。
+説明文やMarkdownは不要です。JSONブロックだけを返してください。
+
 \`\`\`json
 {
   "posts": [
@@ -133,70 +158,39 @@ ${article.content.slice(0, 2000)}${article.content.length > 2000 ? "..." : ""}
   "bestPostId": "post_1"
 }
 \`\`\``;
+  }
 
-    console.log(
-      `[XOperationsWorkflow] Starting with prompt: ${prompt.slice(0, 100)}...`,
-    );
-    console.log(
-      `[XOperationsWorkflow] Agent tools: ${agentDef.tools?.join(", ") ?? "none"}`,
-    );
-
-    let finalResult = "";
-    for await (const event of this.llmProvider.chatStreamWithAgent(
-      [{ role: "user", content: prompt }],
-      {
-        systemPrompt: agentDef.prompt,
-        agent: {
-          maxTurns: 15,
-          tools: agentDef.tools,
-          permissionMode: "acceptEdits",
-        },
-      },
-    )) {
-      switch (event.type) {
-        case "tool_start":
-          console.log(`[XOperationsWorkflow] Tool start: ${event.tool}`);
-          if (event.tool === "Skill") {
-            const skillArg = String(event.input ?? "");
-            if (skillArg.includes("evaluate")) {
-              await this.registry.updateCheckpoint(runId, {
-                phase: "evaluating",
-              });
-            } else if (skillArg.includes("refine")) {
-              await this.registry.updateCheckpoint(runId, {
-                phase: "refining",
-              });
-            }
-          }
-          break;
-        case "tool_result":
+  private async processResult(
+    runId: string,
+    article: NewsArticle,
+    finalResult: string,
+    toolResults: string[],
+  ): Promise<XPostResult> {
+    // finalResult → toolResults → tempファイルの順でパースを試みる
+    let parsed = this.parseWorkflowResult(finalResult);
+    if (!parsed || parsed.posts.length === 0) {
+      for (let i = toolResults.length - 1; i >= 0; i--) {
+        parsed = this.parseWorkflowResult(toolResults[i]);
+        if (parsed && parsed.posts.length > 0) {
           console.log(
-            `[XOperationsWorkflow] Tool result: ${event.tool} -> ${event.result.slice(0, 100)}...`,
+            `[${this.agentName}] Parsed posts from toolResults[${i}]`,
           );
           break;
-        case "turn_complete":
-          console.log(
-            `[XOperationsWorkflow] Turn ${event.turnNumber} complete`,
-          );
-          break;
-        case "done":
-          console.log(
-            `[XOperationsWorkflow] Done: ${event.result.slice(0, 200)}...`,
-          );
-          finalResult = event.result;
-          break;
-        case "cancelled":
-          console.log(`[XOperationsWorkflow] Cancelled: ${event.reason}`);
-          break;
+        }
       }
     }
-
-    const parsed = this.parseWorkflowResult(finalResult);
+    // tempファイルからの回収（スキルが書き出したfinal-result.json）
+    if (!parsed || parsed.posts.length === 0) {
+      parsed = await this.tryReadTempResult();
+    }
 
     if (!parsed || parsed.posts.length === 0) {
-      console.log(
-        `[XOperationsWorkflow] Failed to parse result, using fallback`,
-      );
+      console.log(`[${this.agentName}] Failed to parse result, using fallback`);
+      const maxChars = XOperationsWorkflow.MAX_RAW_RESULT_CHARS;
+      const truncatedResult =
+        finalResult.length > maxChars
+          ? `${finalResult.slice(0, maxChars)}...`
+          : finalResult;
       const fallbackPost: GeneratedPost = {
         id: `post_${Date.now()}_1`,
         text: `【${article.title}】\n\n要点をまとめました\n\n詳細はリプライで`,
@@ -205,21 +199,10 @@ ${article.content.slice(0, 2000)}${article.content.length > 2000 ? "..." : ""}
 
       await this.registry.updateCheckpoint(runId, {
         phase: "pending_approval",
+        parseError: "Failed to parse workflow result",
+        rawResult: truncatedResult,
         generatedPosts: [fallbackPost],
         bestPostId: fallbackPost.id,
-      });
-
-      this.approvalQueue.create({
-        platform: "x",
-        content: { text: fallbackPost.text },
-        prompt: `記事「${article.title}」から生成（フォールバック）`,
-        metadata: {
-          runId,
-          articleId: article.id,
-          articleTitle: article.title,
-          score: fallbackPost.score,
-          allPosts: [fallbackPost],
-        },
       });
 
       return {
@@ -241,19 +224,6 @@ ${article.content.slice(0, 2000)}${article.content.length > 2000 ? "..." : ""}
       bestPostId: bestPost.id,
     });
 
-    this.approvalQueue.create({
-      platform: "x",
-      content: { text: bestPost.text },
-      prompt: `記事「${article.title}」から生成`,
-      metadata: {
-        runId,
-        articleId: article.id,
-        articleTitle: article.title,
-        score: bestPost.score,
-        allPosts: generatedPosts,
-      },
-    });
-
     return {
       success: true,
       runId,
@@ -262,46 +232,193 @@ ${article.content.slice(0, 2000)}${article.content.length > 2000 ? "..." : ""}
     };
   }
 
+  // --- ドメイン固有: 結果パース ---
+
   private parseWorkflowResult(result: string): {
     posts: GeneratedPost[];
     bestPostId: string;
   } | null {
+    const jsonText = this.extractJsonFromResult(result);
+    if (!jsonText) return null;
+
+    let parsed: unknown;
     try {
-      const jsonMatch = result.match(/```json\s*([\s\S]*?)\s*```/);
-      if (!jsonMatch) return null;
-
-      const parsed = JSON.parse(jsonMatch[1]);
-      if (!parsed.posts || !Array.isArray(parsed.posts)) return null;
-
-      return {
-        posts: parsed.posts.map(
-          (p: { id: string; text: string; score?: number }) => ({
-            id: p.id,
-            text: p.text,
-            score: p.score,
-          }),
-        ),
-        bestPostId: parsed.bestPostId ?? parsed.posts[0]?.id,
-      };
+      parsed = JSON.parse(jsonText);
     } catch {
       return null;
     }
+
+    const payload = parsed as Record<string, unknown>;
+    let rawPosts: unknown[] | null = null;
+    if (Array.isArray(payload.posts)) {
+      rawPosts = payload.posts;
+    } else if (Array.isArray(payload.candidates)) {
+      rawPosts = payload.candidates;
+    }
+    if (!rawPosts) return null;
+
+    const posts = rawPosts
+      .map((item, index) => this.normalizePost(item, index))
+      .filter((post): post is GeneratedPost => post !== null);
+
+    if (posts.length === 0) return null;
+
+    const bestPostPayload = payload as {
+      bestPostId?: string;
+      bestPost?: { id?: string };
+    };
+    const bestPostId =
+      bestPostPayload.bestPostId ?? bestPostPayload.bestPost?.id ?? posts[0].id;
+
+    return { posts, bestPostId };
   }
 
-  async recoverPendingRuns(): Promise<void> {
-    const pending = await this.registry.getPending();
+  private normalizePost(input: unknown, index: number): GeneratedPost | null {
+    if (!input || typeof input !== "object") return null;
 
-    for (const run of pending) {
-      const checkpoint = run.checkpoint as unknown as XPostCheckpoint;
+    const item = input as {
+      id?: string;
+      text?: string;
+      content?: string;
+      score?: number;
+      evaluation?: { overallScore?: number };
+    };
 
-      if (checkpoint.phase === "completed") {
-        await this.registry.complete(run.id);
-        console.log(`Recovered completed run: ${run.id}`);
-      } else {
-        console.log(
-          `Found interrupted run: ${run.id}, phase: ${checkpoint.phase}`,
-        );
+    let text = "";
+    if (typeof item.text === "string") {
+      text = item.text;
+    } else if (typeof item.content === "string") {
+      text = item.content;
+    }
+    if (!text.trim()) return null;
+
+    let score: number | undefined;
+    if (typeof item.score === "number") {
+      score = item.score;
+    } else if (typeof item.evaluation?.overallScore === "number") {
+      score = item.evaluation.overallScore;
+    }
+
+    const id = item.id?.trim() || `post_${index + 1}`;
+
+    return { id, text, score };
+  }
+
+  private extractJsonFromResult(result: string): string | null {
+    // ```json ブロック
+    const fencedJson = result.match(/```json\s*([\s\S]*?)\s*```/);
+    if (fencedJson?.[1]) return fencedJson[1];
+
+    // ``` ブロック（言語タグなし）内のJSON
+    const fencedAny = result.match(/```\s*(\{[\s\S]*?\})\s*```/);
+    if (fencedAny?.[1]) {
+      try {
+        JSON.parse(fencedAny[1]);
+        return fencedAny[1];
+      } catch {
+        // JSONでなければスキップ
       }
     }
+
+    let keywordIndex = result.indexOf('"posts"');
+    if (keywordIndex === -1) {
+      keywordIndex = result.indexOf('"candidates"');
+    }
+    if (keywordIndex === -1) return null;
+
+    const startIndex = result.lastIndexOf("{", keywordIndex);
+    if (startIndex === -1) return null;
+
+    const endIndex = this.findMatchingBrace(result, startIndex);
+    if (endIndex === -1) return null;
+
+    return result.slice(startIndex, endIndex + 1);
+  }
+
+  private findMatchingBrace(text: string, startIndex: number): number {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = startIndex; i < text.length; i += 1) {
+      const ch = text[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) continue;
+
+      if (ch === "{") {
+        depth += 1;
+      } else if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) return i;
+      }
+    }
+
+    return -1;
+  }
+
+  // --- ドメイン固有: tempファイル管理 ---
+
+  private static readonly TEMP_DIRS = [
+    ".claude/skills/x-algorithm-evaluate/temp",
+    ".claude/skills/x-post-refine/temp",
+    ".claude/skills/glm-generate/temp",
+  ];
+
+  private async clearTempFiles(): Promise<void> {
+    for (const relDir of XOperationsWorkflow.TEMP_DIRS) {
+      const dirPath = join(process.cwd(), relDir);
+      try {
+        const files = await fs.readdir(dirPath);
+        for (const file of files) {
+          if (file.endsWith(".json")) {
+            await fs.unlink(join(dirPath, file));
+          }
+        }
+        console.log(`[${this.agentName}] Cleared temp: ${relDir}`);
+      } catch {
+        // ディレクトリが存在しない場合は無視
+      }
+    }
+  }
+
+  private static readonly TEMP_RESULT_PATHS = [
+    ".claude/skills/x-algorithm-evaluate/temp/final-result.json",
+    ".claude/skills/x-post-refine/temp/final-result.json",
+  ];
+
+  private async tryReadTempResult(): Promise<{
+    posts: GeneratedPost[];
+    bestPostId: string;
+  } | null> {
+    for (const relPath of XOperationsWorkflow.TEMP_RESULT_PATHS) {
+      const filePath = join(process.cwd(), relPath);
+      try {
+        const content = await fs.readFile(filePath, "utf-8");
+        const parsed = this.parseWorkflowResult(content);
+        if (parsed && parsed.posts.length > 0) {
+          console.log(
+            `[${this.agentName}] Parsed posts from temp file: ${relPath}`,
+          );
+          return parsed;
+        }
+      } catch {
+        // ファイルが存在しない場合は次を試す
+      }
+    }
+    return null;
   }
 }

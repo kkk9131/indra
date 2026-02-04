@@ -1,8 +1,7 @@
 import { promises as fs } from "fs";
-import { type RunRegistry } from "../subagent/index.js";
+import { BaseWorkflow } from "../subagent/base-workflow.js";
 import { createResearchAgents } from "./agents.js";
 import { extractReportSummary } from "./utils.js";
-import type { LLMProvider } from "../../llm/index.js";
 import type { ResearchReport } from "../../analytics/discord-notifier.js";
 import type {
   OutcomeType,
@@ -68,35 +67,39 @@ export interface ResearchResult {
   error?: string;
 }
 
-export class ResearchWorkflow {
+export class ResearchWorkflow extends BaseWorkflow<
+  ResearchConfig,
+  ResearchResult,
+  ResearchCheckpoint
+> {
   private logCallbacks: ResearchLogCallbacks | null = null;
-  private llmProvider: LLMProvider | null = null;
-
-  constructor(private registry: RunRegistry) {}
-
-  setLLMProvider(provider: LLMProvider): void {
-    this.llmProvider = provider;
-  }
 
   setLogCallbacks(callbacks: ResearchLogCallbacks): void {
     this.logCallbacks = callbacks;
   }
 
-  async execute(config: ResearchConfig): Promise<ResearchResult> {
-    const { topic } = config;
-    const depth = config.depth ?? "normal";
-    const language = config.language ?? "ja";
+  protected get agentName(): string {
+    return "research-agent";
+  }
 
-    try {
-      // 1. 実行開始を記録
-      const run = await this.registry.start("research-agent", {
-        topic,
-        depth,
-        language,
-      });
+  protected initCheckpoint(config: ResearchConfig): ResearchCheckpoint {
+    return {
+      topic: config.topic,
+      phase: "collecting",
+    };
+  }
 
-      // ログ記録: 実行開始
-      this.logCallbacks?.saveExecutionLog(run.id, "start", {
+  /**
+   * ログコールバック統合付きの実行
+   *
+   * エラー時は例外を投げずに success=false を返す。
+   */
+  override async execute(config: ResearchConfig): Promise<ResearchResult> {
+    const { topic, depth = "normal", language = "ja" } = config;
+
+    const originalOnStart = this.lifecycleHooks.onStart;
+    this.lifecycleHooks.onStart = async (runId, agentName) => {
+      this.logCallbacks?.saveExecutionLog(runId, "start", {
         config: {
           model: "research-agent",
           maxTurns: 10,
@@ -105,24 +108,14 @@ export class ResearchWorkflow {
         },
         input: `topic=${topic}, depth=${depth}, language=${language}`,
       });
+      await originalOnStart?.(runId, agentName);
+    };
 
-      // 2. チェックポイント初期化
-      const initialCheckpoint: ResearchCheckpoint = {
-        topic,
-        phase: "collecting",
-      };
-      await this.registry.updateCheckpoint(
-        run.id,
-        initialCheckpoint as unknown as Record<string, unknown>,
-      );
+    try {
+      const result = await super.execute(config);
 
-      // 3. ワークフロー実行
-      // TODO: 将来のLLM統合時にサブエージェントとフックを使用
-      const result = await this.executeWorkflow(run.id, config);
-
-      // ログ記録: 実行終了
       if (result.success) {
-        this.logCallbacks?.saveExecutionLog(run.id, "end", {
+        this.logCallbacks?.saveExecutionLog(result.runId, "end", {
           result: {
             success: true,
             totalTurns: 1,
@@ -131,11 +124,9 @@ export class ResearchWorkflow {
           },
         });
 
-        // ログ記録: レポート成果物
-        const outcomeId = crypto.randomUUID();
         this.logCallbacks?.saveOutcomeLog(
-          outcomeId,
-          run.id,
+          crypto.randomUUID(),
+          result.runId,
           "report",
           "final",
           {
@@ -152,7 +143,6 @@ export class ResearchWorkflow {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      // ログ記録: エラー
       this.logCallbacks?.saveExecutionLog("research-error", "error", {
         error: { code: "RESEARCH_ERROR", message: errorMessage },
       });
@@ -162,24 +152,25 @@ export class ResearchWorkflow {
         runId: "",
         error: errorMessage,
       };
+    } finally {
+      this.lifecycleHooks.onStart = originalOnStart;
     }
   }
 
-  private async executeWorkflow(
+  /**
+   * ドメイン固有のワークフロー実行
+   *
+   * BaseWorkflow.execute() から呼ばれる。
+   * レジストリ管理（start/complete/fail）は基底クラスが担当。
+   */
+  protected async run(
     runId: string,
     config: ResearchConfig,
   ): Promise<ResearchResult> {
     const { topic, depth = "normal", language = "ja" } = config;
 
-    if (!this.llmProvider?.chatStreamWithAgent) {
-      return {
-        success: false,
-        runId,
-        error: "LLM provider with agent support not configured",
-      };
-    }
+    this.ensureLLMProvider();
 
-    // 出力パスを生成（絶対パスで指定）
     const dateStr = new Date().toISOString().split("T")[0].replace(/-/g, "");
     const safeTopic = topic
       .replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, "-")
@@ -188,15 +179,13 @@ export class ResearchWorkflow {
     const outputDir = `${baseDir}/agent-output/research-${dateStr}-${safeTopic}`;
     const outputPath = `${outputDir}/report.md`;
 
-    // Phase 1: Collecting
-    await this.registry.updateCheckpoint(runId, { phase: "collecting" });
+    await this.updatePhase(runId, "collecting");
 
-    // エージェント定義を取得（agents.ts から）
     const agents = await createResearchAgents();
     const agentDef = agents["research-agent"];
 
-    // Agent SDK で research-report スキルを呼び出し
-    const maxTurns = depth === "deep" ? 30 : depth === "quick" ? 10 : 20;
+    const maxTurnsByDepth = { deep: 30, quick: 10, normal: 20 } as const;
+    const maxTurns = maxTurnsByDepth[depth];
     const langInstruction = language === "ja" ? "日本語で" : "in English";
 
     const prompt = `research-report スキルを使って、${langInstruction}以下のトピックについてリサーチレポートを作成してください。
@@ -205,73 +194,30 @@ export class ResearchWorkflow {
 
 トピック: ${topic}`;
 
-    // Phase 2: Analyzing
-    await this.registry.updateCheckpoint(runId, { phase: "analyzing" });
-
-    // Phase 3: Deep-Analyzing（オプション）
+    await this.updatePhase(runId, "analyzing");
     if (depth === "deep") {
-      await this.registry.updateCheckpoint(runId, { phase: "deep-analyzing" });
+      await this.updatePhase(runId, "deep-analyzing");
     }
+    await this.updatePhase(runId, "generating");
 
-    // Phase 4: Generating
-    await this.registry.updateCheckpoint(runId, { phase: "generating" });
-
-    // chatStreamWithAgent を使用（chat と同じ方式）
-    console.log(`[Research] Starting with prompt: ${prompt.slice(0, 100)}...`);
     console.log(
-      `[Research] Agent tools: ${agentDef.tools?.join(", ") ?? "none"}`,
+      `[${this.agentName}] Agent tools: ${agentDef.tools?.join(", ") ?? "none"}`,
     );
-    console.log(`[Research] maxTurns: ${maxTurns}`);
+    console.log(`[${this.agentName}] maxTurns: ${maxTurns}`);
 
-    for await (const event of this.llmProvider.chatStreamWithAgent(
-      [{ role: "user", content: prompt }],
-      {
-        systemPrompt: agentDef.prompt,
-        agent: {
-          maxTurns,
-          tools: agentDef.tools,
-          permissionMode: "acceptEdits",
-        },
-      },
-    )) {
-      // すべてのイベントをログ出力
-      if (event.type === "tool_start") {
-        console.log(`[Research] Tool start: ${event.tool}`);
-      } else if (event.type === "tool_result") {
-        console.log(
-          `[Research] Tool result: ${event.tool} -> ${event.result.slice(0, 100)}...`,
-        );
-      } else if (event.type === "turn_complete") {
-        console.log(`[Research] Turn ${event.turnNumber} complete`);
-      } else if (event.type === "text") {
-        // テキストは省略（長すぎる）
-      } else if (event.type === "done") {
-        console.log(`[Research] Done: ${event.result.slice(0, 200)}...`);
-      } else if (event.type === "cancelled") {
-        console.log(`[Research] Cancelled: ${event.reason}`);
-      }
-    }
+    await this.runAgent(runId, prompt, agentDef, { maxTurns });
 
-    // ファイルが生成されたか確認
     try {
       await fs.access(outputPath);
     } catch {
-      return {
-        success: false,
-        runId,
-        error: `Report file not created: ${outputPath}`,
-      };
+      throw new Error(`Report file not created: ${outputPath}`);
     }
 
-    // Phase 5: Completed
     await this.registry.updateCheckpoint(runId, {
       phase: "completed",
       outputPath,
     });
 
-    await this.registry.complete(runId);
-
-    // Discord通知（オプショナル）
     if (this.logCallbacks?.notifyDiscord) {
       try {
         const summaryInfo = await extractReportSummary(outputPath);
@@ -284,9 +230,8 @@ export class ResearchWorkflow {
           keyPoints: summaryInfo?.keyPoints,
         });
       } catch (error) {
-        // Discord通知の失敗はワークフロー全体を失敗させない
         console.error(
-          "[Research] Discord notification failed:",
+          `[${this.agentName}] Discord notification failed:`,
           error instanceof Error ? error.message : error,
         );
       }
@@ -297,26 +242,5 @@ export class ResearchWorkflow {
       runId,
       outputPath,
     };
-  }
-
-  async recoverPendingRuns(): Promise<void> {
-    const pending = await this.registry.getPending();
-
-    for (const run of pending) {
-      if (run.agentName !== "research-agent") {
-        continue;
-      }
-
-      const checkpoint = run.checkpoint as unknown as ResearchCheckpoint;
-
-      if (checkpoint.phase === "completed") {
-        await this.registry.complete(run.id);
-        console.log(`Recovered completed research run: ${run.id}`);
-      } else {
-        console.log(
-          `Found interrupted research run: ${run.id}, phase: ${checkpoint.phase}`,
-        );
-      }
-    }
   }
 }
