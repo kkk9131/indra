@@ -141,4 +141,3 @@ X運用の参考となるアカウント:
 ## 参照
 
 - Xアルゴリズム: `.claude/agent-docs/09-x-algorithm.md`
-- アカウント情報: `.claude/agent-docs/10-x-account.md`

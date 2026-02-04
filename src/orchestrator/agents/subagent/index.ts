@@ -20,6 +20,9 @@ export { CheckpointStore, defaultCheckpointStore } from "./checkpoint.js";
 
 export { RunRegistry, runRegistry } from "./run-registry.js";
 
+export { BaseWorkflow } from "./base-workflow.js";
+export type { RetryOptions, WorkflowLifecycleHooks } from "./base-workflow.js";
+
 export {
   createRegistryHooks,
   createRegistryHooksWithErrorHandling,

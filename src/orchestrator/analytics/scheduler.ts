@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import cron from "node-cron";
 
@@ -9,7 +9,8 @@ import type { NewsArticle } from "../../capabilities/content/news/types.js";
 import type { DailyReport, DailyStats, ReportItem } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SKILLS_DIR = join(__dirname, "../../.claude/skills");
+const PROJECT_ROOT = resolve(__dirname, "../../..");
+const SKILLS_DIR = join(PROJECT_ROOT, ".claude", "skills");
 const SCHEDULE_CRON = "0 5 * * *";
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const LOG_PREFIX = "AnalyticsScheduler:";
@@ -46,7 +47,7 @@ async function runSkillScript(
 
   return new Promise((resolve, reject) => {
     const child = spawn("npx", ["tsx", scriptPath, ...args], {
-      cwd: join(__dirname, "../.."),
+      cwd: PROJECT_ROOT,
       stdio: ["pipe", "pipe", "pipe"],
     });
 

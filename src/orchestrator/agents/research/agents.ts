@@ -63,8 +63,8 @@ export async function createResearchAgents(
       name: "research-agent",
       description: "リサーチレポート作成エージェント",
       prompt: fullPrompt,
-      tools: ["WebSearch", "Read", "Write", "Bash", "Skill"],
-      model: "sonnet",
+      tools: ["WebSearch", "Read", "Write", "Bash"],
+      model: "opus",
     },
     "research-analyzer": {
       name: "research-analyzer",

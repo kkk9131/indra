@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AgentDefinition, Model } from "./types.js";
 
 interface AgentFrontmatter {
@@ -8,6 +9,9 @@ interface AgentFrontmatter {
   tools?: string;
   model?: string;
 }
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = resolve(__dirname, "../../..");
 
 function parseFrontmatter(content: string): {
   frontmatter: AgentFrontmatter;
@@ -94,7 +98,7 @@ export async function loadAgentsFromDirectory(
 }
 
 export async function loadProjectAgents(
-  projectRoot: string = process.cwd(),
+  projectRoot: string = PROJECT_ROOT,
 ): Promise<AgentDefinition[]> {
   const agentsDir = join(projectRoot, ".claude", "agents");
   return loadAgentsFromDirectory(agentsDir);

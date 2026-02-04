@@ -6,7 +6,6 @@ import {
 } from "../../../orchestrator/agents/x-operations/workflow.js";
 import type { RunRegistry } from "../../../orchestrator/agents/subagent/index.js";
 import { IdempotencyManager } from "../../../orchestrator/agents/x-operations/idempotency.js";
-import { ApprovalQueue } from "../../../platform/approval/queue.js";
 import type { LLMProvider } from "../../../orchestrator/llm/index.js";
 
 export type XpostGenerateResult =
@@ -38,17 +37,12 @@ export interface XpostService {
 interface XpostServiceDeps {
   newsStore: NewsStore;
   runRegistry: RunRegistry;
-  approvalQueue?: ApprovalQueue;
   llmProvider: LLMProvider;
 }
 
 export function createXpostService(deps: XpostServiceDeps): XpostService {
   const idempotency = new IdempotencyManager();
-  const workflow = new XOperationsWorkflow(
-    deps.runRegistry,
-    idempotency,
-    deps.approvalQueue ?? new ApprovalQueue(),
-  );
+  const workflow = new XOperationsWorkflow(deps.runRegistry, idempotency);
   workflow.setLLMProvider(deps.llmProvider);
 
   return {

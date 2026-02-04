@@ -5,7 +5,8 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export interface SkillDefinition {
   name: string;
@@ -14,6 +15,8 @@ export interface SkillDefinition {
 }
 
 const RESEARCH_SKILLS = ["research-report"];
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = resolve(__dirname, "../../../..");
 
 /**
  * スキルファイルを読み込む
@@ -49,7 +52,7 @@ function parseSkillContent(name: string, content: string): SkillDefinition {
  * リサーチに必要なスキルを全て読み込む
  */
 export async function loadResearchSkills(
-  projectRoot: string = process.cwd(),
+  projectRoot: string = PROJECT_ROOT,
 ): Promise<SkillDefinition[]> {
   const skillsDir = join(projectRoot, ".claude", "skills");
   const skills: SkillDefinition[] = [];

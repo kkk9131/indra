@@ -153,7 +153,6 @@ export function createGatewayServices(
   const xpost = createXpostService({
     newsStore: deps.newsStore,
     runRegistry: deps.runRegistry,
-    approvalQueue: deps.approvalQueue,
     llmProvider: deps.createLLMProvider(llmConfig),
   });
   const session = createSessionService({

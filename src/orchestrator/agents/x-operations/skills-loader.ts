@@ -5,7 +5,8 @@
  */
 
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export interface SkillDefinition {
   name: string;
@@ -20,6 +21,8 @@ const X_OPERATIONS_SKILLS = [
   "x-post-refine",
   "news-content-fetch",
 ];
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = resolve(__dirname, "../../../..");
 
 /**
  * スキルファイルを読み込む
@@ -63,7 +66,7 @@ function parseSkillContent(
  * X運用に必要なスキルを全て読み込む
  */
 export async function loadXOperationsSkills(
-  projectRoot: string = process.cwd(),
+  projectRoot: string = PROJECT_ROOT,
 ): Promise<SkillDefinition[]> {
   const skillsDir = join(projectRoot, ".claude", "skills");
   const skills: SkillDefinition[] = [];
@@ -87,7 +90,7 @@ export async function loadXOperationsSkills(
  * 利用可能な全スキルをリスト
  */
 export async function listAvailableSkills(
-  projectRoot: string = process.cwd(),
+  projectRoot: string = PROJECT_ROOT,
 ): Promise<string[]> {
   const skillsDir = join(projectRoot, ".claude", "skills");
 

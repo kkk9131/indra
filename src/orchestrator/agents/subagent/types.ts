@@ -22,39 +22,12 @@ export interface SubagentRun {
   error?: string;
 }
 
-export interface XPostCheckpoint {
-  articleId: string;
-  phase:
-    | "analyzing"
-    | "generating"
-    | "evaluating"
-    | "refining"
-    | "selecting"
-    | "pending_approval"
-    | "completed";
-  generatedPosts?: GeneratedPost[];
-  bestPostId?: string;
-  publishedPostIds?: string[];
-  refinementCount: number;
-}
-
-export interface GeneratedPost {
-  id: string;
-  text: string;
-  charCount?: number;
-  templateUsed?: string;
-  score?: number;
-  evaluationResult?: PostEvaluationResult;
-}
-
-export interface PostEvaluationResult {
-  totalScore: number;
-  replyScore: number;
-  engagementScore: number;
-  dwellTimeScore: number;
-  qualityScore: number;
-  suggestions: string[];
-}
+// X運用ドメイン型（後方互換のためre-export）
+export type {
+  XPostCheckpoint,
+  GeneratedPost,
+  PostEvaluationResult,
+} from "../x-operations/types.js";
 
 export interface SubagentRunSerialized {
   id: string;
