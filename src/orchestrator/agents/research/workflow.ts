@@ -67,12 +67,20 @@ export interface ResearchResult {
   error?: string;
 }
 
+interface ResearchExecutionMetrics {
+  startedAt: number;
+  totalTurns: number;
+  totalTokens: number;
+  totalCostUsd?: number;
+}
+
 export class ResearchWorkflow extends BaseWorkflow<
   ResearchConfig,
   ResearchResult,
   ResearchCheckpoint
 > {
   private logCallbacks: ResearchLogCallbacks | null = null;
+  private readonly executionMetrics = new Map<string, ResearchExecutionMetrics>();
 
   setLogCallbacks(callbacks: ResearchLogCallbacks): void {
     this.logCallbacks = callbacks;
@@ -96,9 +104,16 @@ export class ResearchWorkflow extends BaseWorkflow<
    */
   override async execute(config: ResearchConfig): Promise<ResearchResult> {
     const { topic, depth = "normal", language = "ja" } = config;
+    let activeRunId: string | null = null;
 
     const originalOnStart = this.lifecycleHooks.onStart;
     this.lifecycleHooks.onStart = async (runId, agentName) => {
+      activeRunId = runId;
+      this.executionMetrics.set(runId, {
+        startedAt: Date.now(),
+        totalTurns: 1,
+        totalTokens: 0,
+      });
       this.logCallbacks?.saveExecutionLog(runId, "start", {
         config: {
           model: "research-agent",
@@ -115,12 +130,16 @@ export class ResearchWorkflow extends BaseWorkflow<
       const result = await super.execute(config);
 
       if (result.success) {
+        const metrics = this.executionMetrics.get(result.runId);
         this.logCallbacks?.saveExecutionLog(result.runId, "end", {
           result: {
             success: true,
-            totalTurns: 1,
-            totalTokens: 0,
-            duration: 0,
+            totalTurns: metrics?.totalTurns ?? 1,
+            totalTokens: metrics?.totalTokens ?? 0,
+            ...(typeof metrics?.totalCostUsd === "number"
+              ? { totalCostUsd: metrics.totalCostUsd }
+              : {}),
+            duration: metrics ? Date.now() - metrics.startedAt : 0,
           },
         });
 
@@ -143,7 +162,7 @@ export class ResearchWorkflow extends BaseWorkflow<
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      this.logCallbacks?.saveExecutionLog("research-error", "error", {
+      this.logCallbacks?.saveExecutionLog(activeRunId ?? "research-error", "error", {
         error: { code: "RESEARCH_ERROR", message: errorMessage },
       });
 
@@ -154,6 +173,9 @@ export class ResearchWorkflow extends BaseWorkflow<
       };
     } finally {
       this.lifecycleHooks.onStart = originalOnStart;
+      if (activeRunId) {
+        this.executionMetrics.delete(activeRunId);
+      }
     }
   }
 
@@ -205,7 +227,17 @@ export class ResearchWorkflow extends BaseWorkflow<
     );
     console.log(`[${this.agentName}] maxTurns: ${maxTurns}`);
 
-    await this.runAgent(runId, prompt, agentDef, { maxTurns });
+    const agentResult = await this.runAgent(runId, prompt, agentDef, {
+      maxTurns,
+    });
+
+    const metrics = this.executionMetrics.get(runId);
+    if (metrics) {
+      metrics.totalTurns = Math.max(agentResult.totalTurns, 1);
+      metrics.totalTokens = agentResult.usage?.totalTokens ?? 0;
+      metrics.totalCostUsd = agentResult.totalCostUsd;
+      this.executionMetrics.set(runId, metrics);
+    }
 
     try {
       await fs.access(outputPath);

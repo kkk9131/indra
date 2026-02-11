@@ -13,10 +13,12 @@ import type {
 import { createEvent, type RequestFrame } from "../protocol/index.js";
 import type { ChatService } from "../services/chat.js";
 import type { MemoryService } from "../services/memory.js";
+import type { SessionService } from "../services/session.js";
 
 export interface ChatHandlerContext {
   chat: ChatService;
   memory?: MemoryService;
+  session?: SessionService;
   sendSuccess: (ws: WebSocket, id: string, payload?: unknown) => void;
   sendError: (ws: WebSocket, id: string, code: string, message: string) => void;
   getErrorMessage: (error: unknown) => string;
@@ -29,6 +31,7 @@ interface ImageParam {
 
 interface ChatSendParams {
   message: string;
+  sessionId?: string;
   history?: Message[];
   agentMode?: boolean;
   agentOptions?: AgentOptions;
@@ -85,6 +88,9 @@ export async function handleChatSend(
     const config = ctx.chat.getConfig();
     const provider = ctx.chat.createProvider();
     const systemPrompt = await buildSystemPrompt(config.llm.systemPrompt);
+    const session = params.sessionId
+      ? ctx.session?.getOrCreateSession(params.sessionId, "web")
+      : undefined;
     const baseMessages = buildBaseMessages(
       params.history ?? [],
       params.message,
@@ -109,10 +115,21 @@ export async function handleChatSend(
         messages,
         systemPrompt,
         params.agentOptions,
+        session?.id,
+        session?.sdkSessionId ?? undefined,
         abortController.signal,
       );
     } else {
-      await handleSimpleChat(ws, provider, baseMessages, systemPrompt);
+      await handleSimpleChat(
+        ctx,
+        ws,
+        provider,
+        baseMessages,
+        systemPrompt,
+        params.message,
+        session?.id,
+        session?.sdkSessionId ?? undefined,
+      );
     }
 
     ws.send(JSON.stringify(createEvent("chat.done", {})));
@@ -196,15 +213,113 @@ export async function handleLLMTest(
 }
 
 async function handleSimpleChat(
+  ctx: ChatHandlerContext,
   ws: WebSocket,
   provider: LLMProvider,
   messages: Message[],
   systemPrompt: string,
+  userMessage: string,
+  sessionId?: string,
+  sdkResumeSessionId?: string,
 ): Promise<void> {
-  const options = { systemPrompt };
+  const startTime = Date.now();
+  const executionId = crypto.randomUUID();
+  const config = ctx.chat.getConfig();
+  const input = userMessage || extractInputText(messages);
+  let totalTokens = 0;
+  let totalCostUsd: number | undefined;
+  let usage: { input: number; output: number; totalTokens: number } | undefined;
+  let sdkSessionId: string | undefined;
 
-  for await (const chunk of provider.chatStream(messages, options)) {
-    ws.send(JSON.stringify(createEvent("chat.chunk", { text: chunk })));
+  ctx.chat.saveExecutionLog(executionId, "start", {
+    config: {
+      model: config.llm.model,
+      maxTurns: 1,
+      tools: [],
+      permissionMode: "chat",
+    },
+    input,
+  });
+
+  try {
+    if (sessionId) {
+      const response = await provider.chat(messages, {
+        systemPrompt,
+        resume: sdkResumeSessionId,
+        onResultMeta: (meta) => {
+          usage = meta.usage;
+          sdkSessionId = meta.sessionId;
+          if (typeof meta.totalCostUsd === "number") {
+            totalCostUsd = meta.totalCostUsd;
+          }
+        },
+      });
+      ws.send(JSON.stringify(createEvent("chat.chunk", { text: response })));
+
+      if (ctx.session) {
+        ctx.session.appendMessage(sessionId, {
+          role: "user",
+          content: [{ type: "text", text: userMessage }],
+        });
+        ctx.session.appendMessage(sessionId, {
+          role: "assistant",
+          content: [{ type: "text", text: response }],
+          ...(usage
+            ? {
+                usage: {
+                  input: usage.input,
+                  output: usage.output,
+                  totalTokens: usage.totalTokens,
+                },
+              }
+            : {}),
+        });
+      }
+
+      if (usage) {
+        totalTokens = usage.totalTokens;
+        if (ctx.session) {
+          ctx.session.updateTokenUsage(sessionId, {
+            input: usage.input,
+            output: usage.output,
+            total: usage.totalTokens,
+          });
+        }
+      }
+      if (sdkSessionId && ctx.session) {
+        ctx.session.updateSDKSessionId(sessionId, sdkSessionId);
+      }
+    } else {
+      const options = { systemPrompt };
+      for await (const chunk of provider.chatStream(messages, options)) {
+        ws.send(JSON.stringify(createEvent("chat.chunk", { text: chunk })));
+      }
+    }
+
+    ctx.chat.saveExecutionLog(executionId, "end", {
+      result: {
+        success: true,
+        totalTurns: 1,
+        totalTokens,
+        ...(typeof totalCostUsd === "number" ? { totalCostUsd } : {}),
+        duration: Date.now() - startTime,
+      },
+    });
+  } catch (error) {
+    ctx.chat.saveExecutionLog(executionId, "error", {
+      error: {
+        code: (error as Error).name ?? "UNKNOWN_ERROR",
+        message: (error as Error).message ?? "Unknown error",
+      },
+      result: {
+        success: false,
+        totalTurns: 1,
+        totalTokens,
+        ...(typeof totalCostUsd === "number" ? { totalCostUsd } : {}),
+        duration: Date.now() - startTime,
+      },
+    });
+    throw error;
   }
 }
 
@@ -212,6 +327,11 @@ interface AgentExecutionState {
   executionId: string;
   startTime: number;
   totalTurns: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  totalCostUsd: number;
+  sdkSessionId?: string;
   finalResponse: string;
 }
 
@@ -233,12 +353,14 @@ function createExecutionResult(
   success: boolean;
   totalTurns: number;
   totalTokens: number;
+  totalCostUsd?: number;
   duration: number;
 } {
   return {
     success,
     totalTurns: state.totalTurns,
-    totalTokens: 0, // TODO: track token usage
+    totalTokens: state.totalTokens,
+    ...(state.totalCostUsd > 0 ? { totalCostUsd: state.totalCostUsd } : {}),
     duration: Date.now() - state.startTime,
   };
 }
@@ -251,6 +373,8 @@ async function handleAgentChat(
   messages: Message[] | MultimodalMessage[],
   systemPrompt: string,
   agentOptions?: AgentOptions,
+  sessionId?: string,
+  sdkResumeSessionId?: string,
   signal?: AbortSignal,
 ): Promise<void> {
   if (!provider.chatStreamWithAgent) {
@@ -266,6 +390,10 @@ async function handleAgentChat(
     executionId: crypto.randomUUID(),
     startTime: Date.now(),
     totalTurns: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    totalCostUsd: 0,
     finalResponse: "",
   };
 
@@ -276,7 +404,13 @@ async function handleAgentChat(
 
   const options: AgentChatOptions = {
     systemPrompt,
-    agent: { maxTurns, tools, permissionMode },
+    resume: agentOptions?.resume ?? sdkResumeSessionId,
+    agent: {
+      maxTurns,
+      tools,
+      allowedSkills: agentOptions?.allowedSkills,
+      permissionMode,
+    },
     signal,
   };
 
@@ -288,7 +422,7 @@ async function handleAgentChat(
       }
     }
 
-    await finalizeAgentExecution(ctx, state, messages);
+    await finalizeAgentExecution(ctx, state, messages, sessionId);
   } catch (error) {
     ctx.chat.saveExecutionLog(state.executionId, "error", {
       error: {
@@ -369,6 +503,17 @@ function processAgentEvent(
 
     case "done":
       state.finalResponse = event.result ?? "";
+      if (event.usage) {
+        state.inputTokens = event.usage.input;
+        state.outputTokens = event.usage.output;
+        state.totalTokens = event.usage.totalTokens;
+      }
+      if (typeof event.totalCostUsd === "number") {
+        state.totalCostUsd = event.totalCostUsd;
+      }
+      if (event.sessionId) {
+        state.sdkSessionId = event.sessionId;
+      }
       return false;
   }
 }
@@ -377,6 +522,7 @@ async function finalizeAgentExecution(
   ctx: ChatHandlerContext,
   state: AgentExecutionState,
   messages: Message[] | MultimodalMessage[],
+  sessionId?: string,
 ): Promise<void> {
   if (state.finalResponse) {
     const outcomeId = crypto.randomUUID();
@@ -388,6 +534,19 @@ async function finalizeAgentExecution(
   ctx.chat.saveExecutionLog(state.executionId, "end", {
     result: createExecutionResult(state, true),
   });
+
+  if (sessionId && ctx.session) {
+    if (state.totalTokens > 0) {
+      ctx.session.updateTokenUsage(sessionId, {
+        input: state.inputTokens,
+        output: state.outputTokens,
+        total: state.totalTokens,
+      });
+    }
+    if (state.sdkSessionId) {
+      ctx.session.updateSDKSessionId(sessionId, state.sdkSessionId);
+    }
+  }
 
   if (state.finalResponse && ctx.memory) {
     await extractAndSaveMemory(messages, state.finalResponse, ctx);

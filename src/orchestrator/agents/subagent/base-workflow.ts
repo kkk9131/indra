@@ -12,6 +12,7 @@ import type {
   AgentEvent,
   AgentChatOptions,
   Message,
+  TokenUsage,
 } from "../../llm/index.js";
 
 export interface RetryOptions {
@@ -40,6 +41,7 @@ export interface WorkflowLifecycleHooks {
 interface AgentDef {
   prompt: string;
   tools?: string[];
+  allowedSkills?: string[];
 }
 
 const DEFAULT_RETRY: Required<Omit<RetryOptions, "retryableErrors">> = {
@@ -204,7 +206,7 @@ export abstract class BaseWorkflow<TInput, TOutput, TCheckpoint> {
    * ドメイン固有のイベント処理は onEvent コールバックで行う。
    */
   protected async runAgent(
-    _runId: string,
+    runId: string,
     prompt: string,
     agentDef: AgentDef,
     options?: {
@@ -212,22 +214,34 @@ export abstract class BaseWorkflow<TInput, TOutput, TCheckpoint> {
       permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
       onEvent?: (event: AgentEvent) => void | Promise<void>;
     },
-  ): Promise<{ finalResult: string; toolResults: string[] }> {
+  ): Promise<{
+    finalResult: string;
+    toolResults: string[];
+    totalTurns: number;
+    usage?: TokenUsage;
+    totalCostUsd?: number;
+  }> {
     const provider = this.ensureLLMProvider();
 
     const messages: Message[] = [{ role: "user", content: prompt }];
+    const existingRun = this.registry.get(runId);
 
     const chatOptions: AgentChatOptions = {
       systemPrompt: agentDef.prompt,
+      resume: existingRun?.sessionId,
       agent: {
         maxTurns: options?.maxTurns ?? 15,
         tools: agentDef.tools,
+        allowedSkills: agentDef.allowedSkills,
         permissionMode: options?.permissionMode ?? "acceptEdits",
       },
     };
 
     let finalResult = "";
     const toolResults: string[] = [];
+    let totalTurns = 0;
+    let usage: TokenUsage | undefined;
+    let totalCostUsd: number | undefined;
 
     for await (const event of provider.chatStreamWithAgent(
       messages,
@@ -245,11 +259,21 @@ export abstract class BaseWorkflow<TInput, TOutput, TCheckpoint> {
           break;
         case "turn_complete":
           console.log(`[${this.agentName}] Turn ${event.turnNumber} complete`);
+          totalTurns = event.turnNumber;
           break;
         case "done":
           console.log(
             `[${this.agentName}] Done: ${event.result.slice(0, 200)}...`,
           );
+          if (event.sessionId) {
+            await this.registry.setSessionId(runId, event.sessionId);
+          }
+          if (event.usage) {
+            usage = event.usage;
+          }
+          if (typeof event.totalCostUsd === "number") {
+            totalCostUsd = event.totalCostUsd;
+          }
           finalResult = event.result;
           break;
         case "cancelled":
@@ -260,7 +284,13 @@ export abstract class BaseWorkflow<TInput, TOutput, TCheckpoint> {
       await options?.onEvent?.(event);
     }
 
-    return { finalResult, toolResults };
+    return {
+      finalResult,
+      toolResults,
+      totalTurns,
+      usage,
+      totalCostUsd,
+    };
   }
 
   /**
